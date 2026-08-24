@@ -7,6 +7,9 @@ class JobSourceRepository(BaseRepository):
     async def get_by_name(self, name: str) -> JobSource | None:
         return await self._prisma.jobsource.find_unique(where={"name": name})
 
+    async def list_all(self) -> list[JobSource]:
+        return await self._prisma.jobsource.find_many()
+
     async def upsert_by_name(
         self,
         name: str,

@@ -150,18 +150,23 @@ class SourceRegistry:
     def list_all(self) -> list[JobSourceConnector]:
         return [self._connectors[name] for name in self.list_names()]
 
-    def connector_with_config(self, name: str, config: JobSourceConfig) -> JobSourceConnector:
-        """Fresh connector with a (e.g. DB-merged) config — Phase 5's entry point."""
+    def connector_with_config(
+        self, name: str, config: JobSourceConfig, throttle: Throttle | None = None
+    ) -> JobSourceConnector:
+        """Fresh connector with a (e.g. DB-merged) config and an optional
+        per-source throttle — the discovery engine's entry point."""
         if name not in self._configs:
             raise SourceNotFoundError(name, "unknown source")
-        return self._build(name, config)
+        return self._build(name, config, throttle=throttle)
 
-    def _build(self, name: str, config: JobSourceConfig) -> JobSourceConnector:
+    def _build(
+        self, name: str, config: JobSourceConfig, throttle: Throttle | None = None
+    ) -> JobSourceConnector:
         connector_class = CONNECTOR_CLASSES[name]
         http = SourceHTTPClient(
             self._http_client,
             source_name=name,
             timeout_seconds=config.timeoutSeconds,
-            throttle=self._throttle,
+            throttle=throttle if throttle is not None else self._throttle,
         )
         return connector_class(config, http)

@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     auth_rate_limit_per_minute: int = 10
 
+    # Discovery
+    discovery_source_timeout_seconds: float = 60.0  # whole per-source task incl. retries
+    discovery_retry_attempts: int = 3
+    discovery_retry_base_delay_seconds: float = 1.0  # 0 => instant retries (tests)
+    discovery_retry_max_delay_seconds: float = 30.0
+    discovery_retry_jitter_seconds: float = 0.5  # 0 => deterministic (tests)
+    discovery_max_jobs_per_source: int = 50
+    search_rate_limit_per_minute: int = 5
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def split_cors_origins(cls, value: object) -> object:

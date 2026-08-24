@@ -14,14 +14,20 @@ from app.db.client import prisma_client
 from app.db.generated import Prisma
 from app.db.generated.models import User
 from app.repositories import (
+    CompanyRepository,
     JobRepository,
+    JobSourceListingRepository,
     JobSourceRepository,
     ProfileRepository,
+    SearchRunRepository,
     SkillRepository,
     UserRepository,
 )
 from app.services.auth_service import AuthService
+from app.services.deduplication_service import DeduplicationService
+from app.services.discovery_service import DiscoveryService
 from app.services.health_service import HealthService
+from app.services.normalization_service import NormalizationService
 from app.services.profile_service import ProfileService
 from app.sources import SourceRegistry
 
@@ -118,6 +124,39 @@ def get_source_registry() -> SourceRegistry:
 
 SourceRegistryDep = Annotated[SourceRegistry, Depends(get_source_registry)]
 
+
+def get_search_run_repository(prisma: PrismaDep) -> SearchRunRepository:
+    return SearchRunRepository(prisma)
+
+
+SearchRunRepositoryDep = Annotated[SearchRunRepository, Depends(get_search_run_repository)]
+
+
+def get_discovery_service(
+    registry: SourceRegistryDep,
+    prisma: PrismaDep,
+    search_runs: SearchRunRepositoryDep,
+    redis_client: RedisDep,
+    settings: SettingsDep,
+) -> DiscoveryService:
+    return DiscoveryService(
+        registry=registry,
+        job_sources=JobSourceRepository(prisma),
+        search_runs=search_runs,
+        normalizer=NormalizationService(),
+        deduper=DeduplicationService(
+            jobs=JobRepository(prisma),
+            listings=JobSourceListingRepository(prisma),
+            companies=CompanyRepository(prisma),
+            sources=JobSourceRepository(prisma),
+        ),
+        redis_client=redis_client,
+        settings=settings,
+    )
+
+
+DiscoveryServiceDep = Annotated[DiscoveryService, Depends(get_discovery_service)]
+
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -143,7 +182,7 @@ async def get_current_user(
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 
-def rate_limit(scope: str):  # type: ignore[no-untyped-def]  # returns a FastAPI Depends marker
+def rate_limit(scope: str, limit_attr: str = "auth_rate_limit_per_minute"):  # type: ignore[no-untyped-def]  # returns a FastAPI Depends marker
     """Fixed-window per-IP rate limiter backed by Redis (INCR + EXPIRE)."""
 
     async def dependency(request: Request, redis_client: RedisDep, settings: SettingsDep) -> None:
@@ -152,7 +191,7 @@ def rate_limit(scope: str):  # type: ignore[no-untyped-def]  # returns a FastAPI
         count = await redis_client.incr(key)
         if count == 1:
             await redis_client.expire(key, 60)
-        if count > settings.auth_rate_limit_per_minute:
+        if count > getattr(settings, limit_attr):
             raise RateLimitedError("Too many attempts. Try again in a minute.")
 
     return Depends(dependency)

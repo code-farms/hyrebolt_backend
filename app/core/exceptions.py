@@ -47,6 +47,16 @@ class RateLimitedError(AppException):
     error_code = "rate_limited"
 
 
+class NotFoundError(AppException):
+    status_code = status.HTTP_404_NOT_FOUND
+    error_code = "not_found"
+
+
+class InvalidInputError(AppException):
+    status_code = 422
+    error_code = "invalid_input"
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppException)
     async def handle_app_exception(request: Request, exc: AppException) -> JSONResponse:
