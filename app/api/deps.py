@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import RateLimitedError, UnauthorizedError
+from app.core.http import get_shared_http_client
 from app.core.redis import get_redis_client
 from app.core.security import decode_token
 from app.db.client import prisma_client
@@ -22,6 +23,7 @@ from app.repositories import (
 from app.services.auth_service import AuthService
 from app.services.health_service import HealthService
 from app.services.profile_service import ProfileService
+from app.sources import SourceRegistry
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -101,6 +103,20 @@ def get_profile_service(
 
 
 ProfileServiceDep = Annotated[ProfileService, Depends(get_profile_service)]
+
+_source_registry: SourceRegistry | None = None
+
+
+def get_source_registry() -> SourceRegistry:
+    """Lazy singleton over the shared httpx client. Nothing here touches the
+    network — connectors only do when their methods are invoked (Phase 5)."""
+    global _source_registry
+    if _source_registry is None:
+        _source_registry = SourceRegistry(get_shared_http_client())
+    return _source_registry
+
+
+SourceRegistryDep = Annotated[SourceRegistry, Depends(get_source_registry)]
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 

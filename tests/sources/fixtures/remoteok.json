@@ -1,0 +1,36 @@
+[
+  {
+    "0": "LEGAL NOTICE: API terms require linking back to the Remote OK job URL and crediting Remote OK as a source.",
+    "legal": "API terms of use"
+  },
+  {
+    "slug": "backend-engineer-acme-1001",
+    "id": "1001",
+    "epoch": 1787000000,
+    "date": "2026-08-20T10:00:00+00:00",
+    "company": "Acme Robotics Inc.",
+    "position": "Backend Engineer",
+    "tags": ["python", "postgres", "api"],
+    "description": "<p>Build <strong>APIs</strong> in Python &amp; Postgres.</p>",
+    "location": "Worldwide",
+    "salary_min": 60000,
+    "salary_max": 90000,
+    "url": "https://remoteok.com/remote-jobs/1001?utm_source=feed",
+    "apply_url": "https://remoteok.com/remote-jobs/1001/apply"
+  },
+  {
+    "slug": "frontend-developer-globex-1002",
+    "id": 1002,
+    "epoch": 1786000000,
+    "date": "2026-08-10T08:30:00+00:00",
+    "company": "Globex",
+    "position": "Frontend Developer",
+    "tags": ["react", "typescript"],
+    "description": "<p>React + TypeScript SPA work.</p>",
+    "location": "",
+    "salary_min": 0,
+    "salary_max": 0,
+    "url": "https://remoteok.com/remote-jobs/1002",
+    "apply_url": "https://remoteok.com/remote-jobs/1002/apply"
+  }
+]

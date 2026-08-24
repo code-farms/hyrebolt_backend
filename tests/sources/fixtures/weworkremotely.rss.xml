@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>We Work Remotely: Remote Programming Jobs</title>
+    <link>https://weworkremotely.com/categories/remote-programming-jobs</link>
+    <item>
+      <title>Initech: Senior Python Engineer</title>
+      <region>Anywhere in the World</region>
+      <category>Full-Stack Programming</category>
+      <guid>https://weworkremotely.com/remote-jobs/initech-senior-python-engineer</guid>
+      <link>https://weworkremotely.com/remote-jobs/initech-senior-python-engineer?ref=rss</link>
+      <pubDate>Tue, 18 Aug 2026 09:15:00 +0000</pubDate>
+      <description>&lt;p&gt;Own our &lt;em&gt;FastAPI&lt;/em&gt; services end to end.&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Umbrella Corp: DevOps Engineer</title>
+      <region>Europe Only</region>
+      <category>DevOps and Sysadmin</category>
+      <guid>https://weworkremotely.com/remote-jobs/umbrella-corp-devops-engineer</guid>
+      <link>https://weworkremotely.com/remote-jobs/umbrella-corp-devops-engineer</link>
+      <pubDate>Mon, 03 Aug 2026 12:00:00 +0000</pubDate>
+      <description>&lt;p&gt;Kubernetes and Terraform at scale.&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

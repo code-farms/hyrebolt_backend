@@ -122,7 +122,9 @@ leaves a stale client behind.
 
 The full relational schema (users, profiles, skills, companies, sources, jobs,
 matches, applications, search runs, notifications, watchlists) and its
-conventions are documented in [docs/database.md](docs/database.md).
+conventions are documented in [docs/database.md](docs/database.md). The
+pluggable job-source system (connectors, access methods, compliance rules) is
+documented in [docs/job-sources.md](docs/job-sources.md).
 
 ## Testing
 

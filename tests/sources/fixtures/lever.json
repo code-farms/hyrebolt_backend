@@ -1,0 +1,18 @@
+[
+  {
+    "id": "abc-123-def",
+    "text": "Senior Backend Engineer",
+    "hostedUrl": "https://jobs.lever.co/globex/abc-123-def?lever-source=jobboard",
+    "applyUrl": "https://jobs.lever.co/globex/abc-123-def/apply",
+    "categories": {
+      "commitment": "Full-time",
+      "location": "Bengaluru, India",
+      "team": "Engineering"
+    },
+    "workplaceType": "hybrid",
+    "country": "IN",
+    "descriptionPlain": "Own the core services powering Globex.",
+    "description": "<div>Own the core services powering Globex.</div>",
+    "createdAt": 1786800000000
+  }
+]

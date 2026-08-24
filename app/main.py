@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import auth, health, users
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
+from app.core.http import close_http_client
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import close_redis_client
 from app.db.client import connect_db, disconnect_db
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await connect_db()
     logger.info("startup_complete")
     yield
+    await close_http_client()
     await close_redis_client()
     await disconnect_db()
     logger.info("shutdown_complete")
