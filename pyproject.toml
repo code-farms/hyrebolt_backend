@@ -11,6 +11,9 @@ dependencies = [
   "structlog>=24.4",
   "prisma>=0.15",
   "redis>=5.2",
+  "bcrypt>=4.2",
+  "pyjwt>=2.10",
+  "email-validator>=2.2",
 ]
 
 [dependency-groups]

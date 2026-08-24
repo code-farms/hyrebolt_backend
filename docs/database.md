@@ -45,10 +45,9 @@ make seed        # idempotent — safe to re-run
 
 `app/db/seed.py` refuses to run when `ENVIRONMENT=production`. It seeds
 reference data (canonical skills, the 11 job-source rows — all `enabled=false`
-until their connectors exist) and one dev user (`dev@job-agent.local`) with a
-profile and skills. Its `passwordHash` is the conventional unusable marker
-`"!"` until Phase 3 implements real hashing. **It never creates Job rows** —
-jobs only ever come from real discovery.
+until their connectors exist) and one dev user (`dev@example.com`, password
+`devpassword123` — development only) with a profile and skills. **It never
+creates Job rows** — jobs only ever come from real discovery.
 
 ## Schema conventions
 

@@ -23,6 +23,30 @@ class DependencyUnavailableError(AppException):
     error_code = "dependency_unavailable"
 
 
+class UnauthorizedError(AppException):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    error_code = "invalid_token"
+
+    def __init__(self, message: str, error_code: str | None = None) -> None:
+        if error_code is not None:
+            self.error_code = error_code
+        super().__init__(message)
+
+
+class ConflictError(AppException):
+    status_code = status.HTTP_409_CONFLICT
+    error_code = "conflict"
+
+    def __init__(self, message: str, error_code: str = "conflict") -> None:
+        self.error_code = error_code
+        super().__init__(message)
+
+
+class RateLimitedError(AppException):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    error_code = "rate_limited"
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppException)
     async def handle_app_exception(request: Request, exc: AppException) -> JSONResponse:

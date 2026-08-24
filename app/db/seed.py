@@ -6,7 +6,8 @@ Run inside the api container:
     # or: docker compose exec api uv run python -m app.db.seed
 
 Idempotent: every write is an upsert on a unique key, so re-running is safe.
-Seeds reference data (skills, job sources) and one dev user with a profile.
+Seeds reference data (skills, job sources) and one dev user with a profile
+(login: dev@example.com / devpassword123 — development only).
 It deliberately creates NO jobs — job rows only ever come from real discovery.
 """
 
@@ -15,16 +16,16 @@ from typing import NamedTuple
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.security import hash_password
 from app.db.client import connect_db, disconnect_db, prisma_client
 from app.db.generated.enums import SkillProficiency
 from app.repositories import JobSourceRepository, SkillRepository, UserRepository
 
 logger = get_logger(__name__)
 
-DEV_USER_EMAIL = "dev@job-agent.local"
-# Conventional "unusable password" marker; Phase 3 introduces real hashing and
-# no login is possible until then.
-UNUSABLE_PASSWORD_HASH = "!"
+DEV_USER_EMAIL = "dev@example.com"
+# Dev-only credentials so the seeded account can log in locally.
+DEV_USER_PASSWORD = "devpassword123"
 
 # (name, category)
 SKILLS: list[tuple[str, str]] = [
@@ -120,7 +121,7 @@ async def seed() -> None:
         logger.info("seeded_job_sources", count=len(JOB_SOURCES))
 
         user = await user_repo.upsert_by_email(
-            DEV_USER_EMAIL, password_hash=UNUSABLE_PASSWORD_HASH, name="Dev User"
+            DEV_USER_EMAIL, password_hash=hash_password(DEV_USER_PASSWORD), name="Dev User"
         )
         profile = await prisma_client.userprofile.upsert(
             where={"userId": user.id},
