@@ -1,6 +1,6 @@
 # Dev workflow entry points. The Prisma CLI runs inside the api container so it
 # always reads the same DATABASE_URL the app uses.
-.PHONY: up down down-v logs ps test test-local prisma-generate prisma-migrate
+.PHONY: up down down-v logs ps test test-local lint prisma-generate prisma-migrate
 
 up:
 	docker compose up --build -d
@@ -22,6 +22,9 @@ test:
 
 test-local:
 	uv run pytest
+
+lint:
+	uv run ruff check app tests
 
 prisma-generate:
 	docker compose exec api uv run prisma generate --schema /backend/prisma/schema.prisma

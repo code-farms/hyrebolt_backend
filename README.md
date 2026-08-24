@@ -127,6 +127,7 @@ replaces it with the real relational schema.
 ```bash
 make test        # inside the container
 make test-local  # on the host (uv run pytest)
+make lint        # ruff over app/ and tests/
 ```
 
 ## Verifying the stack
