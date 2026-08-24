@@ -11,7 +11,9 @@ class HealthService:
 
     async def check_db(self) -> ComponentStatus:
         try:
-            await self._prisma.systemstatus.count()
+            # Connectivity-only probe, deliberately independent of any
+            # business table so schema changes never break readiness.
+            await self._prisma.query_raw("SELECT 1")
         except Exception as exc:  # noqa: BLE001 - reported as a component status, not raised
             return ComponentStatus(name="postgres", status="error", detail=str(exc))
         return ComponentStatus(name="postgres", status="ok")

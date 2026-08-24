@@ -1,8 +1,6 @@
-// Phase 1: tooling wiring only. Deliberately no business models yet —
-// Phase 2 ("Database Design") owns the full relational schema (User,
-// UserProfile, Job, Company, JobSource, etc.). Running `prisma migrate dev`
-// against this file proves the migration + connection pipeline works end
-// to end before any real schema is committed.
+// Phase 2: complete initial relational schema. The generated asyncio client
+// (output below) is the app's only database access path — no SQLAlchemy.
+// Conventions and rationale are documented in docs/database.md.
 
 generator client {
   provider             = "prisma-client-py"
@@ -16,11 +14,533 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Placeholder only: prisma-client-py refuses to generate a client with zero
-// models, so this proves the Prisma -> Postgres pipeline (generate + migrate
-// + query) end to end. Phase 2 ("Database Design") deletes this model and
-// introduces the real schema.
-model SystemStatus {
-  id        String   @id @default(cuid())
+// ─────────────────────────── ENUMS ───────────────────────────
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  FREELANCE
+  TEMPORARY
+  OTHER
+}
+
+// User-side work-mode preference (Phase 3). The job side stays as the
+// spec-mandated `remote` / `hybrid` booleans on Job.
+enum RemotePreference {
+  REMOTE
+  HYBRID
+  ONSITE
+  ANY
+}
+
+enum SkillProficiency {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+// Phase 12 application tracker statuses.
+enum ApplicationStatus {
+  SAVED
+  INTERESTED
+  APPLIED
+  ASSESSMENT
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+// Phase 8 matching recommendation.
+enum MatchRecommendation {
+  MUST_APPLY
+  STRONG_MATCH
+  CONSIDER
+  LOW_PRIORITY
+  IGNORE
+}
+
+// Phase 8 feedback: positive / negative / interested / notRelevant.
+enum MatchFeedback {
+  POSITIVE
+  NEGATIVE
+  INTERESTED
+  NOT_RELEVANT
+}
+
+enum SearchRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL // Phase 5: some sources failed but the run completed
+  FAILED
+  CANCELLED
+}
+
+enum SearchTrigger {
+  MANUAL // POST /api/v1/search (Phase 5)
+  SCHEDULED // daily agent (Phase 9)
+}
+
+enum NotificationChannel {
+  EMAIL
+  TELEGRAM
+}
+
+enum NotificationType {
+  DAILY_DIGEST
+  JOB_ALERT
+  SYSTEM
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED // suppressed by dedupe or user preferences
+}
+
+// Phase 13 watchlist priority.
+enum WatchlistPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// ─────────────────────────── USER ───────────────────────────
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  // Never nullable: no password-less accounts. The dev seed stores the
+  // conventional unusable marker "!" until Phase 3 adds real hashing.
+  passwordHash String
+  name         String?
+  isActive     Boolean @default(true)
+
+  profile       UserProfile?
+  savedJobs     SavedJob[]
+  applications  Application[]
+  jobMatches    JobMatch[]
+  notifications Notification[]
+  watchlist     CompanyWatchlist[]
+  searchRuns    SearchRun[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete: deactivation without purging history
+
+  @@index([deletedAt])
+}
+
+model UserProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Phase 3 profile fields (name/email live on User).
+  phone              String?
+  currentRole        String?
+  yearsOfExperience  Float?
+  targetRoles        String[]         @default([])
+  preferredLocations String[]         @default([])
+  remotePreference   RemotePreference @default(ANY)
+  minimumSalary      Int?
+  preferredSalary    Int?
+  salaryCurrency     String           @default("INR")
+  noticePeriodDays   Int?
+  education          Json? // list of {degree, institution, year, ...}
+  industries         String[]         @default([])
+  preferredCompanies String[]         @default([])
+  excludedCompanies  String[]         @default([])
+
+  // Phase 10 notification preferences — spec'd field-by-field; kept here so
+  // Phase 10 needs no second profile migration.
+  emailEnabled       Boolean @default(true)
+  telegramEnabled    Boolean @default(false)
+  telegramChatId     String?
+  dailyDigestEnabled Boolean @default(true)
+  digestMinScore     Int     @default(70)
+  digestMaxJobs      Int     @default(10)
+  digestTime         String? // "08:00" local time
+  timezone           String  @default("Asia/Kolkata")
+
+  skills UserSkill[]
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────── SKILLS ───────────────────────────
+
+model Skill {
+  id             String  @id @default(uuid())
+  name           String
+  normalizedName String  @unique // lowercase/trimmed dedupe key
+  category       String? // e.g. "language", "framework", "cloud"
+
+  userSkills UserSkill[]
+  jobSkills  JobSkill[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserSkill {
+  id        String      @id @default(uuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skillId   String
+  skill     Skill       @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  proficiency       SkillProficiency @default(INTERMEDIATE)
+  yearsOfExperience Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, skillId])
+  @@index([skillId])
+}
+
+// ─────────────────────────── COMPANY / SOURCE ───────────────────────────
+
+model Company {
+  id             String  @id @default(uuid())
+  name           String
+  normalizedName String  @unique // entity-resolution key (Phase 6 signal 3)
+  website        String?
+  careersUrl     String?
+  industry       String?
+  stage          String? // Phase 13: nullable — never fabricate funding/stage
+  location       String?
+  description    String?
+  logoUrl        String?
+  metadataSource String? // where startup metadata came from (YC, Wellfound, ...)
+
+  jobs             Job[]
+  watchlistEntries CompanyWatchlist[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model JobSource {
+  id                 String    @id @default(uuid())
+  name               String    @unique // machine key: "linkedin", "naukri", ...
+  displayName        String
+  baseUrl            String?
+  enabled            Boolean   @default(false) // Phase 4 enables per connector
+  requiresAuth       Boolean   @default(false)
+  rateLimitPerMinute Int?
+  capabilities       Json? // Phase 4 JobSourceConfig.capabilities
+  lastHealthCheckAt  DateTime?
+  healthStatus       String?
+
+  jobs     Job[]
+  listings JobSourceListing[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────── JOB ───────────────────────────
+
+model Job {
+  id String @id @default(uuid())
+
+  // Primary/first-seen listing (the spec mandates these on Job). Every
+  // listing, including this one, also gets a JobSourceListing row.
+  externalId   String?
+  sourceId     String
+  source       JobSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  sourceUrl    String?
+  canonicalUrl String?
+
+  title           String
+  normalizedTitle String // lowercase, stripped; search + dedup key (Phase 6 signal 4)
+  description     String? @db.Text
+
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  companyName String // raw text as discovered; survives failed entity resolution
+
+  location           String?
+  normalizedLocation String? // dedup signal 5
+  country            String?
+  remote             Boolean @default(false)
+  hybrid             Boolean @default(false)
+
+  employmentType EmploymentType?
+  experienceMin  Float?
+  experienceMax  Float?
+  salaryMin      Int?
+  salaryMax      Int?
+  salaryCurrency String?
+
+  postedAt     DateTime?
+  discoveredAt DateTime  @default(now())
+  expiresAt    DateTime?
+
+  rawData     Json?
+  contentHash String // hash of normalized title|company|location|description
+
+  // Phase 6 escape hatch: link near-duplicates below the auto-merge
+  // confidence threshold without merging them.
+  duplicateOfId String?
+  duplicateOf   Job?    @relation("JobDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates    Job[]   @relation("JobDuplicates")
+
+  skills       JobSkill[]
+  matches      JobMatch[]
+  savedBy      SavedJob[]
+  applications Application[]
+  listings     JobSourceListing[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete: expired/pulled jobs stay for history
+
+  @@index([companyId])
+  @@index([companyName])
+  @@index([sourceId])
+  @@index([location])
+  @@index([postedAt])
+  @@index([contentHash])
+  @@index([canonicalUrl])
+  @@index([createdAt])
+  @@index([sourceId, externalId])
+  @@index([duplicateOfId])
+  @@index([normalizedTitle])
+  @@index([normalizedTitle, normalizedLocation])
+  @@index([deletedAt, postedAt]) // "active jobs, newest first" hot path
+}
+
+// Phase 6 "store source relationships": one canonical Job, N listings. The
+// Job row mirrors the primary listing's fields; this table is the source of
+// truth for dedup lookups and multi-source display.
+model JobSourceListing {
+  id       String    @id @default(uuid())
+  jobId    String
+  job      Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  sourceId String
+  source   JobSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  externalId   String?
+  sourceUrl    String
+  canonicalUrl String?
+  postedAt     DateTime?
+  discoveredAt DateTime  @default(now())
+  isPrimary    Boolean   @default(false)
+  rawData      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Dedup signal 2 (strongest). Postgres treats NULLs as distinct, so
+  // listings without an externalId never collide.
+  @@unique([sourceId, externalId])
+  @@index([jobId])
+  @@index([canonicalUrl])
+}
+
+model JobSkill {
+  id      String @id @default(uuid())
+  jobId   String
+  job     Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skillId String
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  required Boolean @default(true) // Phase 7: skillsRequired vs skillsPreferred
+
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, skillId])
+  @@index([skillId])
+}
+
+// ─────────────────────────── MATCHING ───────────────────────────
+
+model JobMatch {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  overallScore    Float // 0-100
+  roleScore       Float?
+  skillScore      Float?
+  experienceScore Float?
+  locationScore   Float?
+  salaryScore     Float?
+  workModeScore   Float?
+  industryScore   Float?
+  companyScore    Float?
+
+  recommendation MatchRecommendation?
+  whyMatch       String?
+  missingSkills  String[]             @default([])
+  strengths      String[]             @default([])
+  concerns       String[]             @default([])
+
+  // Phase 7/8 provenance — enables re-scoring and AI cache invalidation.
+  aiModel        String?
+  promptVersion  String?
+  scoringVersion String?
+
+  feedback   MatchFeedback? // Phase 8 POST /jobs/{id}/feedback
+  feedbackAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, jobId]) // Phase 9 idempotency: re-runs upsert, never duplicate
+  @@index([jobId])
+  @@index([userId, overallScore]) // GET /jobs/recommended sort
+  @@index([userId, recommendation])
+}
+
+// ─────────────────────────── USER ↔ JOB ───────────────────────────
+
+model SavedJob {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, jobId])
+  @@index([jobId])
+}
+
+model Application {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  status    ApplicationStatus @default(SAVED)
+  appliedAt DateTime?
+  notes     String?           @db.Text
+
+  recruiterName  String?
+  recruiterEmail String?
+  recruiterPhone String?
+
+  events ApplicationEvent[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete: application history feeds analytics
+
+  @@unique([userId, jobId])
+  @@index([jobId])
+  @@index([userId, status]) // Kanban columns + stats (Phase 12)
+}
+
+// Phase 12 timeline (Discovered → Saved → Applied → ...). Included now so
+// status-change history exists from the first Application row ever written.
+model ApplicationEvent {
+  id            String      @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  status     ApplicationStatus? // status entered, if this event is a transition
+  title      String // "Applied via LinkedIn", "Round 2 interview"
+  notes      String?
+  occurredAt DateTime           @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([applicationId, occurredAt])
+}
+
+// ─────────────────────────── PIPELINE / OPS ───────────────────────────
+
+model SearchRun {
+  id     String  @id @default(uuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  trigger SearchTrigger   @default(MANUAL)
+  status  SearchRunStatus @default(PENDING)
+  query   Json? // SearchQuery params snapshot (Phase 5)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  sourcesAttempted String[] @default([])
+  sourcesSucceeded String[] @default([])
+  sourcesFailed    String[] @default([])
+
+  jobsFound     Int @default(0)
+  jobsNew       Int @default(0)
+  jobsDuplicate Int @default(0)
+
+  errorSummary String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt]) // GET /agent/status "last run"
+  @@index([userId, createdAt])
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  channel NotificationChannel
+  type    NotificationType    @default(DAILY_DIGEST)
+  status  NotificationStatus  @default(PENDING)
+
+  subject String?
+  body    String? @db.Text
+  payload Json? // structured digest content (job ids, scores)
+
+  // Phase 9/10 idempotency, e.g. "digest:{userId}:{channel}:{date}". A
+  // crashed worker retry can never send the same digest twice.
+  dedupeKey String? @unique
+
+  sentAt       DateTime?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model CompanyWatchlist {
+  id        String  @id @default(uuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  priority       WatchlistPriority @default(MEDIUM)
+  preferredRoles String[]          @default([])
+  excludedRoles  String[]          @default([])
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, companyId])
+  @@index([companyId])
 }

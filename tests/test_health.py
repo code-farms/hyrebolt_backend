@@ -7,19 +7,14 @@ from app.api.deps import get_prisma, get_redis
 from app.main import app
 
 
-class _FakeSystemStatus:
-    def __init__(self, error: Exception | None) -> None:
-        self._error = error
-
-    async def count(self) -> int:
-        if self._error is not None:
-            raise self._error
-        return 0
-
-
 class _FakePrisma:
     def __init__(self, error: Exception | None = None) -> None:
-        self.systemstatus = _FakeSystemStatus(error)
+        self._error = error
+
+    async def query_raw(self, query: str) -> list[dict[str, object]]:
+        if self._error is not None:
+            raise self._error
+        return [{"?column?": 1}]
 
 
 class _FakeRedis:

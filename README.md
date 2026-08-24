@@ -112,6 +112,7 @@ uses:
 ```bash
 make prisma-migrate     # apply migrations / create one after editing prisma/schema.prisma
 make prisma-generate    # regenerate the Python client only
+make seed               # development-only seed (idempotent; no fake jobs)
 ```
 
 FastAPI accesses Postgres exclusively through the generated `prisma-client-py`
@@ -119,8 +120,9 @@ client (`app/db/client.py`) — no SQLAlchemy. The generated client is
 gitignored and regenerated on every container start, so a schema change never
 leaves a stale client behind.
 
-The current schema intentionally contains a single placeholder model. Phase 2
-replaces it with the real relational schema.
+The full relational schema (users, profiles, skills, companies, sources, jobs,
+matches, applications, search runs, notifications, watchlists) and its
+conventions are documented in [docs/database.md](docs/database.md).
 
 ## Testing
 
