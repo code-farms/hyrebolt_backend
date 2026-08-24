@@ -1,0 +1,26 @@
+// Phase 1: tooling wiring only. Deliberately no business models yet —
+// Phase 2 ("Database Design") owns the full relational schema (User,
+// UserProfile, Job, Company, JobSource, etc.). Running `prisma migrate dev`
+// against this file proves the migration + connection pipeline works end
+// to end before any real schema is committed.
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+  output               = "../app/db/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Placeholder only: prisma-client-py refuses to generate a client with zero
+// models, so this proves the Prisma -> Postgres pipeline (generate + migrate
+// + query) end to end. Phase 2 ("Database Design") deletes this model and
+// introduces the real schema.
+model SystemStatus {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+}

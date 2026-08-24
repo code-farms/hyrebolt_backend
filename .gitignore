@@ -1,0 +1,33 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Prisma generated client (regenerated at build time)
+app/db/generated/
+
+# Prisma migrations lock/dev artifacts are kept, but local dev DB URLs are not
+prisma/dev.db
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Coverage
+coverage/
+htmlcov/

@@ -1,0 +1,9 @@
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+app/db/generated
+.git
+.env
+*.log
+.DS_Store

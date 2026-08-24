@@ -1,0 +1,33 @@
+[project]
+name = "job-agent-api"
+version = "0.1.0"
+description = "Job Search Agent API"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "structlog>=24.4",
+  "prisma>=0.15",
+  "redis>=5.2",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "httpx>=0.27",
+]
+
+[tool.prisma]
+# Use the Node.js installed in the image instead of letting prisma-client-py
+# bootstrap its own via nodeenv, which needs a toolchain the slim image lacks.
+use_global_node = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+package = false
