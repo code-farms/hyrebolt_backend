@@ -301,6 +301,7 @@ model Job {
   savedBy      SavedJob[]
   applications Application[]
   listings     JobSourceListing[]
+  analysis     JobAnalysis?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -347,6 +348,30 @@ model JobSourceListing {
   @@unique([sourceId, externalId])
   @@index([jobId])
   @@index([canonicalUrl])
+}
+
+// Phase 7: AI-derived analysis, stored separately from the raw job data.
+// One row per job (jobId unique) — the DB is the analysis cache; a changed
+// promptVersion invalidates it.
+model JobAnalysis {
+  id    String @id @default(uuid())
+  jobId String @unique
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  analysis   Json // structured JobAnalysisResult; absent data stays null
+  confidence Float?
+
+  // Provenance
+  model         String
+  promptVersion String
+  inputTokens   Int?
+  outputTokens  Int?
+  processedAt   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([promptVersion])
 }
 
 model JobSkill {

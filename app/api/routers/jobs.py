@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentUserDep, JobRepositoryDep
+from app.api.deps import CurrentUserDep, JobAnalysisServiceDep, JobRepositoryDep
 from app.core.exceptions import NotFoundError
-from app.schemas.job import JobListOut, JobOut, job_out
+from app.schemas.analysis import JobAnalysisOut
+from app.schemas.job import JobListOut, JobOut, analysis_out, job_out
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
@@ -26,3 +27,18 @@ async def get_job(job_id: str, user: CurrentUserDep, jobs: JobRepositoryDep) -> 
     if job is None or job.deletedAt is not None:
         raise NotFoundError("Job not found.")
     return job_out(job)
+
+
+@router.post("/{job_id}/analyze", response_model=JobAnalysisOut)
+async def analyze_job(
+    job_id: str,
+    user: CurrentUserDep,
+    jobs: JobRepositoryDep,
+    analysis_service: JobAnalysisServiceDep,
+) -> JobAnalysisOut:
+    """Run (or return the cached) AI analysis for a job."""
+    job = await jobs.get_by_id(job_id)
+    if job is None or job.deletedAt is not None:
+        raise NotFoundError("Job not found.")
+    row = await analysis_service.analyze_job(job)
+    return analysis_out(row)

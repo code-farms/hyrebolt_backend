@@ -5,6 +5,7 @@ import redis.asyncio as redis
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.ai import LLMProvider, MockLLMProvider, OpenAIProvider
 from app.core.config import Settings, get_settings
 from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.core.http import get_shared_http_client
@@ -15,6 +16,7 @@ from app.db.generated import Prisma
 from app.db.generated.models import User
 from app.repositories import (
     CompanyRepository,
+    JobAnalysisRepository,
     JobRepository,
     JobSourceListingRepository,
     JobSourceRepository,
@@ -28,6 +30,7 @@ from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
 from app.services.duplicate_detection_service import DuplicateDetectionService
 from app.services.health_service import HealthService
+from app.services.job_analysis_service import JobAnalysisService
 from app.services.normalization_service import NormalizationService
 from app.services.profile_service import ProfileService
 from app.sources import SourceRegistry
@@ -159,6 +162,35 @@ def get_discovery_service(
 
 
 DiscoveryServiceDep = Annotated[DiscoveryService, Depends(get_discovery_service)]
+
+
+def get_llm_provider(settings: SettingsDep) -> LLMProvider:
+    if settings.llm_provider == "openai" and settings.openai_api_key:
+        return OpenAIProvider(
+            get_shared_http_client(),
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            base_url=settings.openai_base_url,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
+    return MockLLMProvider()
+
+
+LLMProviderDep = Annotated[LLMProvider, Depends(get_llm_provider)]
+
+
+def get_job_analysis_service(
+    provider: LLMProviderDep, prisma: PrismaDep, settings: SettingsDep
+) -> JobAnalysisService:
+    return JobAnalysisService(
+        provider=provider,
+        analyses=JobAnalysisRepository(prisma),
+        jobs=JobRepository(prisma),
+        settings=settings,
+    )
+
+
+JobAnalysisServiceDep = Annotated[JobAnalysisService, Depends(get_job_analysis_service)]
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 

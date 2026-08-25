@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     dedup_weight_location: float = 0.15
     dedup_weight_posted_date: float = 0.10
 
+    # AI (Phase 7). Default "mock": no API key needed in dev/tests.
+    llm_provider: Literal["mock", "openai"] = "mock"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+    llm_timeout_seconds: float = 30.0
+    llm_max_retries: int = 2
+    llm_retry_base_delay_seconds: float = 1.0  # 0 => instant retries (tests)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def split_cors_origins(cls, value: object) -> object:

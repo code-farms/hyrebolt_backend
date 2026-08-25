@@ -31,6 +31,20 @@ class JobRepository(BaseRepository):
             order={"createdAt": "asc"},
         )
 
+    async def find_unanalyzed(self, prompt_version: str, *, limit: int) -> list[Job]:
+        """Jobs with no analysis, or one from an older prompt version."""
+        return await self._prisma.job.find_many(
+            where={
+                "deletedAt": None,
+                "OR": [
+                    {"analysis": None},
+                    {"analysis": {"isNot": {"promptVersion": prompt_version}}},
+                ],
+            },
+            order={"createdAt": "desc"},
+            take=limit,
+        )
+
     async def find_candidates_by_company(self, company_id: str, *, limit: int) -> list[Job]:
         """Fuzzy-dedup blocking: same company (spec signal 3), newest first."""
         return await self._prisma.job.find_many(
@@ -42,7 +56,11 @@ class JobRepository(BaseRepository):
     async def get_with_listings(self, job_id: str) -> Job | None:
         return await self._prisma.job.find_unique(
             where={"id": job_id},
-            include={"listings": {"include": {"source": True}}, "duplicates": True},
+            include={
+                "listings": {"include": {"source": True}},
+                "duplicates": True,
+                "analysis": True,
+            },
         )
 
     async def list_active_with_listings(
@@ -54,7 +72,11 @@ class JobRepository(BaseRepository):
             order={"createdAt": "desc"},
             take=limit,
             skip=offset,
-            include={"listings": {"include": {"source": True}}, "duplicates": True},
+            include={
+                "listings": {"include": {"source": True}},
+                "duplicates": True,
+                "analysis": True,
+            },
         )
         total = await self._prisma.job.count(where=where)  # type: ignore[arg-type]
         return rows, total

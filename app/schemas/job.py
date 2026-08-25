@@ -3,8 +3,9 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.db.generated.models import Job
+from app.db.generated.models import Job, JobAnalysis
 from app.models import EmploymentType
+from app.schemas.analysis import JobAnalysisOut, JobAnalysisResult
 
 
 class JobSourceListingOut(BaseModel):
@@ -39,6 +40,8 @@ class JobOut(BaseModel):
     sources: list[JobSourceListingOut]
     duplicateOfId: str | None
     duplicateIds: list[str]
+    # AI analysis (Phase 7), present once the job has been analyzed.
+    analysis: JobAnalysisOut | None
     createdAt: datetime
 
 
@@ -83,5 +86,19 @@ def job_out(job: Job) -> JobOut:
         ],
         duplicateOfId=job.duplicateOfId,
         duplicateIds=[duplicate.id for duplicate in duplicates],
+        analysis=analysis_out(job.analysis) if getattr(job, "analysis", None) else None,
         createdAt=job.createdAt,
+    )
+
+
+def analysis_out(row: JobAnalysis) -> JobAnalysisOut:
+    return JobAnalysisOut(
+        jobId=row.jobId,
+        analysis=JobAnalysisResult.model_validate(row.analysis),
+        confidence=row.confidence,
+        model=row.model,
+        promptVersion=row.promptVersion,
+        inputTokens=row.inputTokens,
+        outputTokens=row.outputTokens,
+        processedAt=row.processedAt,
     )
