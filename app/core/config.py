@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     dedup_weight_location: float = 0.15
     dedup_weight_posted_date: float = 0.10
 
+    # Matching (Phase 8): spec weight table, configurable.
+    match_weight_role: float = 0.25
+    match_weight_skills: float = 0.25
+    match_weight_experience: float = 0.15
+    match_weight_location: float = 0.10
+    match_weight_salary: float = 0.10
+    match_weight_work_mode: float = 0.05
+    match_weight_industry: float = 0.05
+    match_weight_company: float = 0.05
+    match_batch_limit: int = 50
+
     # AI (Phase 7). Default "mock": no API key needed in dev/tests.
     llm_provider: Literal["mock", "openai"] = "mock"
     openai_api_key: str | None = None

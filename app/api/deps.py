@@ -17,6 +17,7 @@ from app.db.generated.models import User
 from app.repositories import (
     CompanyRepository,
     JobAnalysisRepository,
+    JobMatchRepository,
     JobRepository,
     JobSourceListingRepository,
     JobSourceRepository,
@@ -25,7 +26,9 @@ from app.repositories import (
     SkillRepository,
     UserRepository,
 )
+from app.services.ai_matcher import AIMatcher
 from app.services.auth_service import AuthService
+from app.services.candidate_matching_service import CandidateMatchingService
 from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
 from app.services.duplicate_detection_service import DuplicateDetectionService
@@ -33,6 +36,8 @@ from app.services.health_service import HealthService
 from app.services.job_analysis_service import JobAnalysisService
 from app.services.normalization_service import NormalizationService
 from app.services.profile_service import ProfileService
+from app.services.ranking_service import RankingService
+from app.services.rule_based_matcher import RuleBasedMatcher
 from app.sources import SourceRegistry
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -191,6 +196,41 @@ def get_job_analysis_service(
 
 
 JobAnalysisServiceDep = Annotated[JobAnalysisService, Depends(get_job_analysis_service)]
+
+
+def get_job_match_repository(prisma: PrismaDep) -> JobMatchRepository:
+    return JobMatchRepository(prisma)
+
+
+JobMatchRepositoryDep = Annotated[JobMatchRepository, Depends(get_job_match_repository)]
+
+
+def get_matching_service(
+    provider: LLMProviderDep,
+    prisma: PrismaDep,
+    matches: JobMatchRepositoryDep,
+    settings: SettingsDep,
+) -> CandidateMatchingService:
+    return CandidateMatchingService(
+        matcher=RuleBasedMatcher(settings),
+        ai_matcher=AIMatcher(provider),
+        matches=matches,
+        profiles=ProfileRepository(prisma),
+        analyses=JobAnalysisRepository(prisma),
+        jobs=JobRepository(prisma),
+    )
+
+
+CandidateMatchingServiceDep = Annotated[
+    CandidateMatchingService, Depends(get_matching_service)
+]
+
+
+def get_ranking_service(matches: JobMatchRepositoryDep) -> RankingService:
+    return RankingService(matches)
+
+
+RankingServiceDep = Annotated[RankingService, Depends(get_ranking_service)]
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
