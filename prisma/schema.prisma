@@ -88,6 +88,7 @@ enum SearchTrigger {
 enum NotificationChannel {
   EMAIL
   TELEGRAM
+  IN_APP // bell notifications in the web app — always on
 }
 
 enum NotificationType {
@@ -543,11 +544,13 @@ model Notification {
 
   sentAt       DateTime?
   errorMessage String?
+  readAt       DateTime? // in-app unread tracking (bell)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId, createdAt])
+  @@index([userId, readAt])
   @@index([status])
 }
 

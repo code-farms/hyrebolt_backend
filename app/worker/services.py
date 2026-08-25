@@ -7,6 +7,7 @@ from app.core.config import Settings
 from app.core.http import get_shared_http_client
 from app.core.redis import get_redis_client
 from app.db.client import prisma_client
+from app.notifications import build_providers
 from app.repositories import (
     CompanyRepository,
     JobAnalysisRepository,
@@ -21,6 +22,7 @@ from app.repositories import (
 )
 from app.services.ai_matcher import AIMatcher
 from app.services.candidate_matching_service import CandidateMatchingService
+from app.services.daily_digest_service import DailyDigestService
 from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
 from app.services.duplicate_detection_service import DuplicateDetectionService
@@ -80,14 +82,19 @@ def build_agent_tasks(settings: Settings) -> AgentTasks:
         analyses=JobAnalysisRepository(prisma),
         jobs=JobRepository(prisma),
     )
+    digest = DailyDigestService(
+        ranking=RankingService(matches),
+        profiles=ProfileRepository(prisma),
+        notifications=NotificationRepository(prisma),
+        providers=build_providers(settings, get_shared_http_client()),
+    )
     return AgentTasks(
         discovery=discovery,
         analysis=analysis,
         matching=matching,
-        ranking=RankingService(matches),
+        digest=digest,
         users=UserRepository(prisma),
         profiles=ProfileRepository(prisma),
-        notifications=NotificationRepository(prisma),
         redis_client=redis_client,
         settings=settings,
     )

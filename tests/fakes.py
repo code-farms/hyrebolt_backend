@@ -70,6 +70,14 @@ class FakeProfile:
     industries: list[str] = field(default_factory=list)
     preferredCompanies: list[str] = field(default_factory=list)
     excludedCompanies: list[str] = field(default_factory=list)
+    # Notification preferences (Phase 10), schema defaults mirrored.
+    emailEnabled: bool = True
+    telegramEnabled: bool = False
+    telegramChatId: str | None = None
+    dailyDigestEnabled: bool = True
+    digestMinScore: int = 70
+    digestMaxJobs: int = 10
+    digestTime: str | None = None
     skills: list[SimpleNamespace] = field(default_factory=list)
 
 

@@ -18,17 +18,13 @@ import redis.asyncio as redis
 
 from app.core.config import Settings
 from app.core.logging import get_logger
-from app.models import NotificationChannel, NotificationType, SearchTrigger
-from app.repositories import (
-    NotificationRepository,
-    ProfileRepository,
-    UserRepository,
-)
+from app.models import SearchTrigger
+from app.repositories import ProfileRepository, UserRepository
 from app.schemas.search import SearchQuery
 from app.services.candidate_matching_service import CandidateMatchingService
+from app.services.daily_digest_service import DailyDigestService
 from app.services.discovery_service import DiscoveryService
 from app.services.job_analysis_service import JobAnalysisService
-from app.services.ranking_service import RankingService
 
 logger = get_logger(__name__)
 
@@ -43,20 +39,18 @@ class AgentTasks:
         discovery: DiscoveryService,
         analysis: JobAnalysisService,
         matching: CandidateMatchingService,
-        ranking: RankingService,
+        digest: DailyDigestService,
         users: UserRepository,
         profiles: ProfileRepository,
-        notifications: NotificationRepository,
         redis_client: redis.Redis,
         settings: Settings,
     ) -> None:
         self._discovery = discovery
         self._analysis = analysis
         self._matching = matching
-        self._ranking = ranking
+        self._digest = digest
         self._users = users
         self._profiles = profiles
-        self._notifications = notifications
         self._redis = redis_client
         self._settings = settings
 
@@ -119,49 +113,23 @@ class AgentTasks:
         return total
 
     async def send_daily_digest(self, *, today: date | None = None) -> dict[str, int]:
-        run_date = (today or datetime.now(UTC).date()).isoformat()
-        created_count = 0
-        skipped = 0
+        run_date = today or datetime.now(UTC).date()
+        created = 0
+        deduped = 0
+        failed = 0
         for user in await self._users.list_active():
-            profile = await self._profiles.get_by_user_id(user.id)
-            if profile is None or not profile.dailyDigestEnabled:
-                continue
-            cap = min(self._settings.max_daily_results, profile.digestMaxJobs)
-            rows, _ = await self._ranking.recommended(
-                user, limit=cap, offset=0, min_score=self._settings.min_match_score
-            )
-            if not rows:
-                continue
-            items = [
-                {
-                    "jobId": row.jobId,
-                    "title": row.job.title if row.job else None,
-                    "company": row.job.companyName if row.job else None,
-                    "score": row.overallScore,
-                    "recommendation": str(row.recommendation) if row.recommendation else None,
-                }
-                for row in rows
-            ]
-            body = "\n".join(
-                f"- [{item['score']}] {item['title']} @ {item['company']}" for item in items
-            )
-            _, created = await self._notifications.create_if_absent(
-                dedupe_key=f"digest:{user.id}:{run_date}",
-                user_id=user.id,
-                channel=NotificationChannel.EMAIL,
-                notification_type=NotificationType.DAILY_DIGEST,
-                subject=f"Your daily job digest — {len(items)} matches ({run_date})",
-                body=body,
-                payload={"date": run_date, "items": items},
-            )
-            if created:
-                created_count += 1
-            else:
-                skipped += 1
+            outcomes = await self._digest.send_for_user(user, run_date)
+            created += sum(1 for o in outcomes.values() if o in ("created", "sent"))
+            deduped += sum(1 for o in outcomes.values() if o == "deduped")
+            failed += sum(1 for o in outcomes.values() if o == "failed")
         logger.info(
-            "agent_digest_completed", date=run_date, created=created_count, skipped=skipped
+            "agent_digest_completed",
+            date=run_date.isoformat(),
+            created=created,
+            skipped=deduped,
+            failed=failed,
         )
-        return {"created": created_count, "skipped": skipped}
+        return {"created": created, "skipped": deduped, "failed": failed}
 
 
 def _log_final_failure(ctx: dict[str, Any], task: str, exc: Exception) -> None:

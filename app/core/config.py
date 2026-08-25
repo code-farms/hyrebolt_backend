@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     agent_analyze_batch: int = 100
     agent_match_batch: int = 200
 
+    # Notifications (Phase 10). Email/Telegram are env-gated: a channel is
+    # available only when its flag is true AND its credentials are set.
+    # In-app (bell) notifications are always on.
+    email_notifications_enabled: bool = False
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_address: str | None = None
+    telegram_notifications_enabled: bool = False
+    telegram_bot_token: str | None = None
+
     # Matching (Phase 8): spec weight table, configurable.
     match_weight_role: float = 0.25
     match_weight_skills: float = 0.25

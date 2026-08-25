@@ -61,6 +61,13 @@ def _profile_out(profile: UserProfile) -> ProfileOut:
         industries=profile.industries,
         preferredCompanies=profile.preferredCompanies,
         excludedCompanies=profile.excludedCompanies,
+        emailEnabled=profile.emailEnabled,
+        telegramEnabled=profile.telegramEnabled,
+        telegramChatId=profile.telegramChatId,
+        dailyDigestEnabled=profile.dailyDigestEnabled,
+        digestMinScore=profile.digestMinScore,
+        digestMaxJobs=profile.digestMaxJobs,
+        digestTime=profile.digestTime,
     )
 
 

@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from app.db.generated import Json
 from app.db.generated.models import Notification
-from app.models import NotificationChannel, NotificationType
+from app.models import NotificationChannel, NotificationStatus, NotificationType
 from app.repositories.base import BaseRepository
 
 
@@ -41,3 +41,72 @@ class NotificationRepository(BaseRepository):
 
     async def count_since(self, since: datetime) -> int:
         return await self._prisma.notification.count(where={"createdAt": {"gte": since}})
+
+    async def get_by_dedupe_key(self, dedupe_key: str) -> Notification | None:
+        return await self._prisma.notification.find_unique(where={"dedupeKey": dedupe_key})
+
+    async def list_in_app_for_user(
+        self, user_id: str, *, unread_only: bool, limit: int, offset: int
+    ) -> tuple[list[Notification], int]:
+        where: dict[str, Any] = {
+            "userId": user_id,
+            "channel": NotificationChannel.IN_APP,
+        }
+        if unread_only:
+            where["readAt"] = None
+        rows = await self._prisma.notification.find_many(
+            where=where,
+            order={"createdAt": "desc"},
+            take=limit,
+            skip=offset,
+        )
+        total = await self._prisma.notification.count(where=where)
+        return rows, total
+
+    async def unread_count(self, user_id: str) -> int:
+        return await self._prisma.notification.count(
+            where={
+                "userId": user_id,
+                "channel": NotificationChannel.IN_APP,
+                "readAt": None,
+            }
+        )
+
+    async def mark_read(self, notification_id: str, user_id: str) -> Notification | None:
+        row = await self._prisma.notification.find_unique(where={"id": notification_id})
+        if row is None or row.userId != user_id:
+            return None
+        if row.readAt is not None:
+            return row
+        return await self._prisma.notification.update(
+            where={"id": notification_id}, data={"readAt": datetime.now(UTC)}
+        )
+
+    async def mark_all_read(self, user_id: str) -> int:
+        return await self._prisma.notification.update_many(
+            where={
+                "userId": user_id,
+                "channel": NotificationChannel.IN_APP,
+                "readAt": None,
+            },
+            data={"readAt": datetime.now(UTC)},
+        )
+
+    async def mark_sent(self, notification_id: str) -> Notification:
+        return await self._prisma.notification.update(
+            where={"id": notification_id},
+            data={
+                "status": NotificationStatus.SENT,  # type: ignore[typeddict-item]
+                "sentAt": datetime.now(UTC),
+                "errorMessage": None,
+            },
+        )
+
+    async def mark_failed(self, notification_id: str, error: str) -> Notification:
+        return await self._prisma.notification.update(
+            where={"id": notification_id},
+            data={
+                "status": NotificationStatus.FAILED,  # type: ignore[typeddict-item]
+                "errorMessage": error[:500],
+            },
+        )

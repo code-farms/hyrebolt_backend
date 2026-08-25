@@ -14,6 +14,7 @@ from app.core.security import decode_token
 from app.db.client import prisma_client
 from app.db.generated import Prisma
 from app.db.generated.models import User
+from app.notifications import build_providers
 from app.repositories import (
     CompanyRepository,
     JobAnalysisRepository,
@@ -31,6 +32,7 @@ from app.services.agent_status_service import AgentStatusService
 from app.services.ai_matcher import AIMatcher
 from app.services.auth_service import AuthService
 from app.services.candidate_matching_service import CandidateMatchingService
+from app.services.daily_digest_service import DailyDigestService
 from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
 from app.services.duplicate_detection_service import DuplicateDetectionService
@@ -252,6 +254,32 @@ def get_agent_status_service(
 
 
 AgentStatusServiceDep = Annotated[AgentStatusService, Depends(get_agent_status_service)]
+
+
+def get_notification_repository(prisma: PrismaDep) -> NotificationRepository:
+    return NotificationRepository(prisma)
+
+
+NotificationRepositoryDep = Annotated[
+    NotificationRepository, Depends(get_notification_repository)
+]
+
+
+def get_daily_digest_service(
+    prisma: PrismaDep,
+    matches: JobMatchRepositoryDep,
+    notifications: NotificationRepositoryDep,
+    settings: SettingsDep,
+) -> DailyDigestService:
+    return DailyDigestService(
+        ranking=RankingService(matches),
+        profiles=ProfileRepository(prisma),
+        notifications=notifications,
+        providers=build_providers(settings, get_shared_http_client()),
+    )
+
+
+DailyDigestServiceDep = Annotated[DailyDigestService, Depends(get_daily_digest_service)]
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 

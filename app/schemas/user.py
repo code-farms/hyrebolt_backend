@@ -34,6 +34,14 @@ class ProfileOut(BaseModel):
     industries: list[str]
     preferredCompanies: list[str]
     excludedCompanies: list[str]
+    # Notification preferences (Phase 10)
+    emailEnabled: bool
+    telegramEnabled: bool
+    telegramChatId: str | None
+    dailyDigestEnabled: bool
+    digestMinScore: int
+    digestMaxJobs: int
+    digestTime: str | None
 
 
 class ProfileUpdate(BaseModel):
@@ -53,6 +61,14 @@ class ProfileUpdate(BaseModel):
     industries: list[str] | None = None
     preferredCompanies: list[str] | None = None
     excludedCompanies: list[str] | None = None
+    # Notification preferences (Phase 10)
+    emailEnabled: bool | None = None
+    telegramEnabled: bool | None = None
+    telegramChatId: str | None = Field(default=None, max_length=64)
+    dailyDigestEnabled: bool | None = None
+    digestMinScore: int | None = Field(default=None, ge=0, le=100)
+    digestMaxJobs: int | None = Field(default=None, ge=1, le=50)
+    digestTime: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
 
 
 class SkillsUpdate(BaseModel):

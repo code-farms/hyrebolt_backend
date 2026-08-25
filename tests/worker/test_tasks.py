@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.models import SearchRunStatus, SearchTrigger
+from app.services.daily_digest_service import DailyDigestService
 from app.worker import tasks as task_module
 from app.worker.tasks import AgentTasks
 from tests.fakes import FakeRedis
@@ -94,20 +95,41 @@ def make_user(user_id: str):
 
 
 def make_profile(
-    *, roles: list[str], locations: list[str], digest_enabled: bool = True, max_jobs: int = 10
+    *,
+    roles: list[str],
+    locations: list[str],
+    digest_enabled: bool = True,
+    max_jobs: int = 10,
+    min_score: int = 60,
 ):
     return SimpleNamespace(
         targetRoles=roles,
         preferredLocations=locations,
         dailyDigestEnabled=digest_enabled,
         digestMaxJobs=max_jobs,
+        digestMinScore=min_score,
+        emailEnabled=False,
+        telegramEnabled=False,
+        telegramChatId=None,
     )
 
 
 def match_row(job_id: str, score: float) -> FakeMatchRow:
     row = FakeMatchRow(id=f"m-{job_id}", userId="u1", jobId=job_id, overallScore=score)
-    row.job = SimpleNamespace(title=f"Job {job_id}", companyName="Acme")
+    row.job = SimpleNamespace(
+        title=f"Job {job_id}",
+        companyName="Acme",
+        location="Remote",
+        salaryMin=None,
+        salaryMax=None,
+        salaryCurrency=None,
+        sourceUrl=f"https://example.com/{job_id}",
+        canonicalUrl=None,
+        listings=[],
+    )
     row.recommendation = None
+    row.whyMatch = None
+    row.missingSkills = []
     return row
 
 
@@ -121,15 +143,22 @@ def build_agent(
     discovery = FakeDiscovery()
     notifications = FakeNotifications()
     redis = FakeRedis()
+    profile_repo = profiles or FakeProfilesRepo(
+        {"u1": make_profile(roles=["Backend Engineer"], locations=["Remote"])}
+    )
+    digest = DailyDigestService(
+        ranking=ranking or FakeRanking({}),  # type: ignore[arg-type]
+        profiles=profile_repo,  # type: ignore[arg-type]
+        notifications=notifications,  # type: ignore[arg-type]
+        providers={},  # email/telegram env-disabled: in-app only
+    )
     agent = AgentTasks(
         discovery=discovery,  # type: ignore[arg-type]
         analysis=FakeAnalysis(),  # type: ignore[arg-type]
         matching=matching or FakeMatching(),  # type: ignore[arg-type]
-        ranking=ranking or FakeRanking({}),  # type: ignore[arg-type]
+        digest=digest,
         users=users or FakeUsersRepo([make_user("u1")]),  # type: ignore[arg-type]
-        profiles=profiles
-        or FakeProfilesRepo({"u1": make_profile(roles=["Backend Engineer"], locations=["Remote"])}),  # type: ignore[arg-type]
-        notifications=notifications,  # type: ignore[arg-type]
+        profiles=profile_repo,  # type: ignore[arg-type]
         redis_client=redis,  # type: ignore[arg-type]
         settings=settings,
     )
@@ -176,13 +205,13 @@ async def test_digest_dedupes_filters_and_caps() -> None:
     first = await agent.send_daily_digest(today=TODAY)
     second = await agent.send_daily_digest(today=TODAY)
 
-    assert first == {"created": 1, "skipped": 0}
-    assert second == {"created": 0, "skipped": 1}  # dedupeKey blocked re-send
+    assert first == {"created": 1, "skipped": 0, "failed": 0}
+    assert second == {"created": 0, "skipped": 1, "failed": 0}  # dedupeKey blocked re-send
     assert len(notifications.rows) == 1
-    row = notifications.rows[f"digest:u1:{TODAY.isoformat()}"]
+    row = notifications.rows[f"digest:u1:{TODAY.isoformat()}:in_app"]
     items = row["payload"]["items"]
     assert [i["jobId"] for i in items] == ["j1", "j2"]  # j3 under min score
-    assert ranking.last_args["min_score"] == settings.min_match_score
+    assert ranking.last_args["min_score"] == 60.0  # profile.digestMinScore
 
 
 async def test_digest_respects_profile_cap_and_toggle() -> None:
@@ -193,7 +222,7 @@ async def test_digest_respects_profile_cap_and_toggle() -> None:
     )
     agent, _, notifications, _ = build_agent(ranking=ranking, profiles=profiles)
     await agent.send_daily_digest(today=TODAY)
-    key = f"digest:u1:{TODAY.isoformat()}"
+    key = f"digest:u1:{TODAY.isoformat()}:in_app"
     assert len(notifications.rows[key]["payload"]["items"]) == 2  # profile cap wins
 
     disabled_profiles = FakeProfilesRepo(
@@ -201,7 +230,7 @@ async def test_digest_respects_profile_cap_and_toggle() -> None:
     )
     agent2, _, notifications2, _ = build_agent(ranking=ranking, profiles=disabled_profiles)
     result = await agent2.send_daily_digest(today=TODAY)
-    assert result == {"created": 0, "skipped": 0}
+    assert result == {"created": 0, "skipped": 0, "failed": 0}
     assert notifications2.rows == {}
 
 
