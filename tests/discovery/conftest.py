@@ -3,6 +3,7 @@ import pytest
 from app.core.config import get_settings
 from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
+from app.services.duplicate_detection_service import DuplicateDetectionService
 from app.services.normalization_service import NormalizationService
 from tests.discovery.fakes import (
     FakeCompanyRepository,
@@ -50,6 +51,8 @@ class DiscoveryHarness:
                 listings=self.listings,  # type: ignore[arg-type]
                 companies=self.companies,  # type: ignore[arg-type]
                 sources=self.sources,  # type: ignore[arg-type]
+                detector=DuplicateDetectionService(settings),
+                settings=settings,
             ),
             redis_client=self.redis,  # type: ignore[arg-type]
             settings=settings,

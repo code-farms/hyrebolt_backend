@@ -1,15 +1,23 @@
-"""Phase 5 deduplication: EXACT signals only — source external id, contentHash,
-canonicalUrl. Phase 6 layers similarity scoring and duplicateOf links on top
-of the "else new" branch without changing this decision order."""
+"""Deduplication pipeline stage.
+
+Exact signals first (source external id, contentHash, canonicalUrl — Phase 5),
+then Phase 6's fuzzy detection on same-company candidates: a weighted
+similarity score with two confidence bands — auto-merge (attach listing) and
+link-without-merging (new Job with duplicateOfId). Never a blind merge."""
 
 from dataclasses import dataclass, field
 
+from app.core.config import Settings
 from app.core.logging import get_logger
 from app.repositories import (
     CompanyRepository,
     JobRepository,
     JobSourceListingRepository,
     JobSourceRepository,
+)
+from app.services.duplicate_detection_service import (
+    DuplicateDetectionService,
+    DuplicateVerdict,
 )
 from app.sources.models import NormalizedJob
 
@@ -31,11 +39,15 @@ class DeduplicationService:
         listings: JobSourceListingRepository,
         companies: CompanyRepository,
         sources: JobSourceRepository,
+        detector: DuplicateDetectionService,
+        settings: Settings,
     ) -> None:
         self._jobs = jobs
         self._listings = listings
         self._companies = companies
         self._sources = sources
+        self._detector = detector
+        self._settings = settings
 
     async def persist_batch(self, jobs: list[NormalizedJob]) -> BatchPersistResult:
         """Sequential on purpose: within one run, a later occurrence of the
@@ -82,24 +94,57 @@ class DeduplicationService:
         if existing is None and job.canonicalUrl is not None:
             existing = await self._jobs.find_by_canonical_url(job.canonicalUrl)
         if existing is not None:
-            await self._listings.upsert_listing(
-                job_id=existing.id,
-                source_id=source_id,
-                external_id=job.externalId,
-                source_url=source_url,
-                canonical_url=job.canonicalUrl,
-                posted_at=job.postedAt,
-                raw_data=job.rawData,
-                is_primary=False,
-            )
+            await self._attach_listing(existing.id, job, source_id)
             return None
 
-        # (d) New job.
+        # (d) Fuzzy detection against same-company candidates (Phase 6).
         company = await self._companies.upsert_by_normalized_name(job.companyName)
+        candidates = await self._jobs.find_candidates_by_company(
+            company.id, limit=self._settings.dedup_max_candidates
+        )
+        decision = self._detector.decide(job, candidates)  # type: ignore[arg-type]
+
+        if decision.verdict is DuplicateVerdict.DUPLICATE:
+            logger.info(
+                "job_fuzzy_duplicate",
+                source=job.sourceName,
+                matched_job_id=decision.matched_job_id,
+                score=round(decision.score, 3),
+            )
+            assert decision.matched_job_id is not None
+            await self._attach_listing(decision.matched_job_id, job, source_id)
+            return None
+
+        duplicate_of_id: str | None = None
+        if decision.verdict is DuplicateVerdict.NEAR_DUPLICATE:
+            # Confidence below the merge bar: keep both jobs but store the
+            # relationship — the spec forbids blind merging.
+            duplicate_of_id = decision.matched_job_id
+            logger.info(
+                "job_near_duplicate_linked",
+                source=job.sourceName,
+                linked_job_id=duplicate_of_id,
+                score=round(decision.score, 3),
+            )
+
         created = await self._jobs.create_from_normalized(
-            job, source_id=source_id, company_id=company.id
+            job, source_id=source_id, company_id=company.id, duplicate_of_id=duplicate_of_id
         )
         return created.id
+
+    async def _attach_listing(
+        self, job_id: str, job: NormalizedJob, source_id: str
+    ) -> None:
+        await self._listings.upsert_listing(
+            job_id=job_id,
+            source_id=source_id,
+            external_id=job.externalId,
+            source_url=job.sourceUrl or job.canonicalUrl or "",
+            canonical_url=job.canonicalUrl,
+            posted_at=job.postedAt,
+            raw_data=job.rawData,
+            is_primary=False,
+        )
 
     async def _resolve_source_id(
         self, source_name: str, cache: dict[str, str]

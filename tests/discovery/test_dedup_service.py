@@ -1,4 +1,6 @@
+from app.core.config import get_settings
 from app.services.deduplication_service import DeduplicationService
+from app.services.duplicate_detection_service import DuplicateDetectionService
 from tests.discovery.fakes import (
     FakeCompanyRepository,
     FakeJobRepository,
@@ -18,7 +20,16 @@ def make_service() -> tuple[DeduplicationService, FakeJobRepository, FakeListing
     jobs.listings = listings
     companies = FakeCompanyRepository()
     sources = FakeJobSourceRepository([ALPHA, BETA])
-    return DeduplicationService(jobs, listings, companies, sources), jobs, listings, companies  # type: ignore[arg-type]
+    settings = get_settings()
+    service = DeduplicationService(
+        jobs,  # type: ignore[arg-type]
+        listings,  # type: ignore[arg-type]
+        companies,  # type: ignore[arg-type]
+        sources,  # type: ignore[arg-type]
+        detector=DuplicateDetectionService(settings),
+        settings=settings,
+    )
+    return service, jobs, listings, companies
 
 
 async def test_new_job_creates_company_job_and_primary_listing() -> None:
@@ -115,6 +126,102 @@ async def test_company_reused_across_suffix_variants() -> None:
     )
 
     assert len(companies.companies) == 1
+
+
+async def test_fuzzy_title_variant_auto_merges() -> None:
+    from datetime import UTC, datetime
+
+    service, jobs, listings, _ = make_service()
+    posted = datetime(2026, 8, 20, tzinfo=UTC)
+    description = (
+        "design build and operate the payment apis that power our merchant "
+        "platform using python postgres and redis owning services end to end"
+    )
+    await service.persist_batch(
+        [
+            make_normalized_job(
+                source_name="alpha",
+                external_id="1",
+                title="Backend Engineer",
+                description=description,
+                posted_at=posted,
+                location="Bengaluru, India",
+            )
+        ]
+    )
+
+    variant = make_normalized_job(
+        source_name="beta",
+        external_id="b-1",
+        title="Sr Backend Engineer",  # different hash, same opening
+        description=description,
+        posted_at=posted,
+        location="Bengaluru, India",
+    )
+    result = await service.persist_batch([variant])
+
+    assert (result.new, result.duplicate) == (0, 1)
+    assert len(jobs.jobs) == 1
+    assert len(listings.listings) == 2  # secondary listing attached
+
+
+async def test_fuzzy_uncertain_match_links_without_merging() -> None:
+    from datetime import UTC, datetime
+
+    service, jobs, _, _ = make_service()
+    posted = datetime(2026, 8, 20, tzinfo=UTC)
+    await service.persist_batch(
+        [
+            make_normalized_job(
+                source_name="alpha",
+                external_id="1",
+                title="Backend Engineer",
+                description=None,
+                posted_at=posted,
+                location="Bengaluru",
+            )
+        ]
+    )
+    original_id = next(iter(jobs.jobs))
+
+    # Same title/company/date, containment-matching location, no descriptions
+    # to confirm — enough to relate, not enough to merge.
+    uncertain = make_normalized_job(
+        source_name="beta",
+        external_id="b-1",
+        title="Backend Engineer",
+        description=None,
+        posted_at=posted,
+        location="Bengaluru, India",
+    )
+    result = await service.persist_batch([uncertain])
+
+    assert (result.new, result.duplicate) == (1, 0)
+    assert len(jobs.jobs) == 2
+    linked = jobs.jobs[result.new_job_ids[0]]
+    assert linked.duplicateOfId == original_id
+
+
+async def test_fuzzy_distinct_role_stays_new_and_unlinked() -> None:
+    service, jobs, _, _ = make_service()
+    await service.persist_batch(
+        [make_normalized_job(source_name="alpha", external_id="1", title="Backend Engineer")]
+    )
+
+    result = await service.persist_batch(
+        [
+            make_normalized_job(
+                source_name="alpha",
+                external_id="2",
+                title="Product Designer",
+                description="craft beautiful mobile design systems",
+            )
+        ]
+    )
+
+    assert (result.new, result.duplicate) == (1, 0)
+    assert len(jobs.jobs) == 2
+    assert jobs.jobs[result.new_job_ids[0]].duplicateOfId is None
 
 
 async def test_rerun_is_fully_idempotent() -> None:

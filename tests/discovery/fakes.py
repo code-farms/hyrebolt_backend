@@ -90,6 +90,12 @@ class FakeJobRow:
     contentHash: str
     canonicalUrl: str | None
     companyId: str | None
+    normalizedTitle: str = ""
+    normalizedLocation: str | None = None
+    description: str | None = None
+    postedAt: datetime | None = None
+    duplicateOfId: str | None = None
+    createdAt: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -114,14 +120,31 @@ class FakeJobRepository:
     async def find_by_canonical_url(self, canonical_url: str) -> FakeJobRow | None:
         return next((j for j in self.jobs.values() if j.canonicalUrl == canonical_url), None)
 
+    async def find_candidates_by_company(
+        self, company_id: str, *, limit: int
+    ) -> list[FakeJobRow]:
+        rows = [j for j in self.jobs.values() if j.companyId == company_id]
+        rows.sort(key=lambda j: j.createdAt, reverse=True)
+        return rows[:limit]
+
     async def create_from_normalized(
-        self, job: NormalizedJob, *, source_id: str, company_id: str | None
+        self,
+        job: NormalizedJob,
+        *,
+        source_id: str,
+        company_id: str | None,
+        duplicate_of_id: str | None = None,
     ) -> FakeJobRow:
         row = FakeJobRow(
             id=uuid.uuid4().hex,
             contentHash=job.contentHash,
             canonicalUrl=job.canonicalUrl,
             companyId=company_id,
+            normalizedTitle=job.normalizedTitle,
+            normalizedLocation=job.normalizedLocation,
+            description=job.description,
+            postedAt=job.postedAt,
+            duplicateOfId=duplicate_of_id,
         )
         self.jobs[row.id] = row
         assert self.listings is not None

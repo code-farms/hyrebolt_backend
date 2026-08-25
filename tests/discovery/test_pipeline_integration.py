@@ -9,6 +9,7 @@ from app.models import SearchRunStatus
 from app.schemas.search import SearchQuery
 from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
+from app.services.duplicate_detection_service import DuplicateDetectionService
 from app.services.normalization_service import NormalizationService
 from app.sources import DEFAULT_CONFIGS, SourceRegistry, SourceSearchParams
 from tests.discovery.fakes import (
@@ -53,6 +54,8 @@ def build_service(registry: SourceRegistry, rows: list[FakeSourceRow]):
             listings=listings,  # type: ignore[arg-type]
             companies=FakeCompanyRepository(),  # type: ignore[arg-type]
             sources=sources,  # type: ignore[arg-type]
+            detector=DuplicateDetectionService(settings),
+            settings=settings,
         ),
         redis_client=FakeRedis(),  # type: ignore[arg-type]
         settings=settings,

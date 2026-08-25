@@ -31,8 +31,41 @@ class JobRepository(BaseRepository):
             order={"createdAt": "asc"},
         )
 
+    async def find_candidates_by_company(self, company_id: str, *, limit: int) -> list[Job]:
+        """Fuzzy-dedup blocking: same company (spec signal 3), newest first."""
+        return await self._prisma.job.find_many(
+            where={"companyId": company_id, "deletedAt": None},
+            order={"createdAt": "desc"},
+            take=limit,
+        )
+
+    async def get_with_listings(self, job_id: str) -> Job | None:
+        return await self._prisma.job.find_unique(
+            where={"id": job_id},
+            include={"listings": {"include": {"source": True}}, "duplicates": True},
+        )
+
+    async def list_active_with_listings(
+        self, *, limit: int, offset: int
+    ) -> tuple[list[Job], int]:
+        where = {"deletedAt": None}
+        rows = await self._prisma.job.find_many(
+            where=where,  # type: ignore[arg-type]
+            order={"createdAt": "desc"},
+            take=limit,
+            skip=offset,
+            include={"listings": {"include": {"source": True}}, "duplicates": True},
+        )
+        total = await self._prisma.job.count(where=where)  # type: ignore[arg-type]
+        return rows, total
+
     async def create_from_normalized(
-        self, job: NormalizedJob, *, source_id: str, company_id: str | None
+        self,
+        job: NormalizedJob,
+        *,
+        source_id: str,
+        company_id: str | None,
+        duplicate_of_id: str | None = None,
     ) -> Job:
         """Creates the Job and its isPrimary listing atomically — a Job must
         never exist without its primary listing."""
@@ -60,6 +93,7 @@ class JobRepository(BaseRepository):
             "postedAt": job.postedAt,
             "rawData": Json(job.rawData) if job.rawData is not None else None,
             "contentHash": job.contentHash,
+            "duplicateOfId": duplicate_of_id,
         }
         async with self._prisma.tx() as tx:
             created = await tx.job.create(data=data)  # type: ignore[arg-type]

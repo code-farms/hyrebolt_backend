@@ -26,6 +26,7 @@ from app.repositories import (
 from app.services.auth_service import AuthService
 from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
+from app.services.duplicate_detection_service import DuplicateDetectionService
 from app.services.health_service import HealthService
 from app.services.normalization_service import NormalizationService
 from app.services.profile_service import ProfileService
@@ -149,6 +150,8 @@ def get_discovery_service(
             listings=JobSourceListingRepository(prisma),
             companies=CompanyRepository(prisma),
             sources=JobSourceRepository(prisma),
+            detector=DuplicateDetectionService(settings),
+            settings=settings,
         ),
         redis_client=redis_client,
         settings=settings,
