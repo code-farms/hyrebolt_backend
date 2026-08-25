@@ -4,8 +4,17 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.db.generated.models import Job, JobAnalysis
-from app.models import EmploymentType
+from app.models import EmploymentType, MatchFeedback, MatchRecommendation
 from app.schemas.analysis import JobAnalysisOut, JobAnalysisResult
+
+
+class JobMatchSummaryOut(BaseModel):
+    """Slim viewer-match context for job cards; the full component breakdown
+    lives on GET /jobs/{id}/match."""
+
+    overallScore: float
+    recommendation: MatchRecommendation | None
+    feedback: MatchFeedback | None
 
 
 class JobSourceListingOut(BaseModel):
@@ -42,6 +51,9 @@ class JobOut(BaseModel):
     duplicateIds: list[str]
     # AI analysis (Phase 7), present once the job has been analyzed.
     analysis: JobAnalysisOut | None
+    # Viewer context (Phase 11): the caller's match summary + saved flag.
+    match: JobMatchSummaryOut | None = None
+    saved: bool = False
     createdAt: datetime
 
 
@@ -55,6 +67,17 @@ class JobListOut(BaseModel):
 def job_out(job: Job) -> JobOut:
     listings = job.listings or []
     duplicates = job.duplicates or []
+    viewer_matches = getattr(job, "matches", None) or []
+    viewer_saved = getattr(job, "savedBy", None) or []
+    match_summary = (
+        JobMatchSummaryOut(
+            overallScore=viewer_matches[0].overallScore,
+            recommendation=viewer_matches[0].recommendation,
+            feedback=viewer_matches[0].feedback,
+        )
+        if viewer_matches
+        else None
+    )
     return JobOut(
         id=job.id,
         title=job.title,
@@ -87,6 +110,8 @@ def job_out(job: Job) -> JobOut:
         duplicateOfId=job.duplicateOfId,
         duplicateIds=[duplicate.id for duplicate in duplicates],
         analysis=analysis_out(job.analysis) if getattr(job, "analysis", None) else None,
+        match=match_summary,
+        saved=bool(viewer_saved),
         createdAt=job.createdAt,
     )
 

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Query
 
 from app.api.deps import (
@@ -6,9 +8,11 @@ from app.api.deps import (
     JobAnalysisServiceDep,
     JobRepositoryDep,
     RankingServiceDep,
+    SavedJobRepositoryDep,
     SettingsDep,
 )
 from app.core.exceptions import NotFoundError
+from app.repositories.job_repository import JobFilters
 from app.schemas.analysis import JobAnalysisOut
 from app.schemas.job import JobListOut, JobOut, analysis_out, job_out
 from app.schemas.match import (
@@ -28,11 +32,56 @@ async def list_jobs(
     jobs: JobRepositoryDep,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    source: str | None = Query(default=None),
+    location: str | None = Query(default=None),
+    remote: bool | None = Query(default=None),
+    company: str | None = Query(default=None),
+    minSalary: int | None = Query(default=None, ge=0),
+    maxExperience: float | None = Query(default=None, ge=0, le=60),
+    skills: str | None = Query(default=None, description="comma-separated terms"),
+    datePosted: int | None = Query(default=None, ge=1, le=90),
+    minScore: float | None = Query(default=None, ge=0, le=100),
+    sort: Literal["recent", "score"] = Query(default="recent"),
 ) -> JobListOut:
-    rows, total = await jobs.list_active_with_listings(limit=limit, offset=offset)
-    return JobListOut(
-        items=[job_out(row) for row in rows], total=total, limit=limit, offset=offset
+    filters = JobFilters(
+        source=source,
+        location=location,
+        remote=remote,
+        company=company,
+        min_salary=minSalary,
+        max_experience=maxExperience,
+        skills=tuple(term.strip() for term in (skills or "").split(",") if term.strip()),
+        date_posted_days=datePosted,
     )
+    if sort == "score" or minScore is not None:
+        match_rows, total = await jobs.list_by_score(
+            user.id, filters, min_score=minScore or 0, limit=limit, offset=offset
+        )
+        items = [job_out(row.job) for row in match_rows if row.job is not None]
+    else:
+        rows, total = await jobs.list_filtered(
+            user.id, filters, limit=limit, offset=offset
+        )
+        items = [job_out(row) for row in rows]
+    return JobListOut(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/saved", response_model=JobListOut)
+async def list_saved_jobs(
+    user: CurrentUserDep,
+    saved: SavedJobRepositoryDep,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> JobListOut:
+    rows, total = await saved.list_for_user(user.id, limit=limit, offset=offset)
+    items = []
+    for row in rows:
+        if row.job is None:
+            continue
+        out = job_out(row.job)
+        out.saved = True  # by definition; the include doesn't carry savedBy here
+        items.append(out)
+    return JobListOut(items=items, total=total, limit=limit, offset=offset)
 
 
 # NOTE: static paths must be declared before the /{job_id} routes.
@@ -61,11 +110,50 @@ async def recommended_jobs(
 
 
 @router.get("/{job_id}", response_model=JobOut)
-async def get_job(job_id: str, user: CurrentUserDep, jobs: JobRepositoryDep) -> JobOut:
+async def get_job(
+    job_id: str,
+    user: CurrentUserDep,
+    jobs: JobRepositoryDep,
+    saved: SavedJobRepositoryDep,
+) -> JobOut:
     job = await jobs.get_with_listings(job_id)
     if job is None or job.deletedAt is not None:
         raise NotFoundError("Job not found.")
-    return job_out(job)
+    out = job_out(job)
+    out.saved = await saved.is_saved(user.id, job_id)
+    return out
+
+
+@router.post("/{job_id}/save", response_model=JobOut)
+async def save_job(
+    job_id: str,
+    user: CurrentUserDep,
+    jobs: JobRepositoryDep,
+    saved: SavedJobRepositoryDep,
+) -> JobOut:
+    job = await jobs.get_with_listings(job_id)
+    if job is None or job.deletedAt is not None:
+        raise NotFoundError("Job not found.")
+    await saved.save(user.id, job_id)  # idempotent upsert
+    out = job_out(job)
+    out.saved = True
+    return out
+
+
+@router.delete("/{job_id}/save", response_model=JobOut)
+async def unsave_job(
+    job_id: str,
+    user: CurrentUserDep,
+    jobs: JobRepositoryDep,
+    saved: SavedJobRepositoryDep,
+) -> JobOut:
+    job = await jobs.get_with_listings(job_id)
+    if job is None or job.deletedAt is not None:
+        raise NotFoundError("Job not found.")
+    await saved.unsave(user.id, job_id)  # idempotent
+    out = job_out(job)
+    out.saved = False
+    return out
 
 
 @router.post("/{job_id}/analyze", response_model=JobAnalysisOut)

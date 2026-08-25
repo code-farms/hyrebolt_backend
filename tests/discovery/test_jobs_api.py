@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from httpx import AsyncClient
 
-from app.api.deps import get_job_repository
+from app.api.deps import get_job_repository, get_saved_job_repository
 from app.main import app
 from tests.fakes import FakeDB, FakeRedis
 
@@ -67,12 +67,17 @@ class FakeJobsRepo:
     def __init__(self, rows: list[SimpleNamespace]) -> None:
         self.rows = {row.id: row for row in rows}
 
-    async def list_active_with_listings(self, *, limit: int, offset: int):
+    async def list_filtered(self, user_id, filters, *, limit: int, offset: int):
         active = [r for r in self.rows.values() if r.deletedAt is None]
         return active[offset : offset + limit], len(active)
 
     async def get_with_listings(self, job_id: str):
         return self.rows.get(job_id)
+
+
+class FakeSavedRepo:
+    async def is_saved(self, user_id: str, job_id: str) -> bool:
+        return False
 
 
 @pytest.fixture
@@ -85,8 +90,10 @@ def jobs_repo():
         ]
     )
     app.dependency_overrides[get_job_repository] = lambda: repo
+    app.dependency_overrides[get_saved_job_repository] = lambda: FakeSavedRepo()
     yield repo
     app.dependency_overrides.pop(get_job_repository, None)
+    app.dependency_overrides.pop(get_saved_job_repository, None)
 
 
 async def _login(client: AsyncClient) -> dict[str, str]:

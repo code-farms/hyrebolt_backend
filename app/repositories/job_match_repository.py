@@ -62,6 +62,20 @@ class JobMatchRepository(BaseRepository):
         total = await self._prisma.jobmatch.count(where=where)
         return rows, total
 
+    async def count_in_score_band(
+        self, user_id: str, *, min_score: float, max_score: float | None = None
+    ) -> int:
+        score: dict[str, float] = {"gte": min_score}
+        if max_score is not None:
+            score["lt"] = max_score
+        return await self._prisma.jobmatch.count(
+            where={
+                "userId": user_id,
+                "overallScore": score,
+                "job": {"is": {"deletedAt": None}},
+            }
+        )
+
     async def count_updated_since(self, since: datetime) -> int:
         return await self._prisma.jobmatch.count(where={"updatedAt": {"gte": since}})
 

@@ -16,6 +16,7 @@ from app.db.generated import Prisma
 from app.db.generated.models import User
 from app.notifications import build_providers
 from app.repositories import (
+    ApplicationRepository,
     CompanyRepository,
     JobAnalysisRepository,
     JobMatchRepository,
@@ -24,6 +25,7 @@ from app.repositories import (
     JobSourceRepository,
     NotificationRepository,
     ProfileRepository,
+    SavedJobRepository,
     SearchRunRepository,
     SkillRepository,
     UserRepository,
@@ -254,6 +256,22 @@ def get_agent_status_service(
 
 
 AgentStatusServiceDep = Annotated[AgentStatusService, Depends(get_agent_status_service)]
+
+
+def get_saved_job_repository(prisma: PrismaDep) -> SavedJobRepository:
+    return SavedJobRepository(prisma)
+
+
+SavedJobRepositoryDep = Annotated[SavedJobRepository, Depends(get_saved_job_repository)]
+
+
+def get_application_repository(prisma: PrismaDep) -> ApplicationRepository:
+    return ApplicationRepository(prisma)
+
+
+ApplicationRepositoryDep = Annotated[
+    ApplicationRepository, Depends(get_application_repository)
+]
 
 
 def get_notification_repository(prisma: PrismaDep) -> NotificationRepository:
