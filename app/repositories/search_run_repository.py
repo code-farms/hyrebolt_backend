@@ -56,6 +56,12 @@ class SearchRunRepository(BaseRepository):
     async def get_by_id(self, run_id: str) -> SearchRun | None:
         return await self._prisma.searchrun.find_unique(where={"id": run_id})
 
+    async def latest_by_trigger(self, trigger: SearchTrigger) -> SearchRun | None:
+        return await self._prisma.searchrun.find_first(
+            where={"trigger": trigger},  # type: ignore[typeddict-item]
+            order={"createdAt": "desc"},
+        )
+
     async def list_visible_to(
         self, user_id: str, *, limit: int, offset: int
     ) -> tuple[list[SearchRun], int]:

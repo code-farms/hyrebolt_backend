@@ -1,0 +1,93 @@
+"""Builds the agent's service graph for the worker process — the same wiring
+app/api/deps.py does per-request, but over the module singletons and built
+once at worker startup."""
+
+from app.ai import LLMProvider, MockLLMProvider, OpenAIProvider
+from app.core.config import Settings
+from app.core.http import get_shared_http_client
+from app.core.redis import get_redis_client
+from app.db.client import prisma_client
+from app.repositories import (
+    CompanyRepository,
+    JobAnalysisRepository,
+    JobMatchRepository,
+    JobRepository,
+    JobSourceListingRepository,
+    JobSourceRepository,
+    NotificationRepository,
+    ProfileRepository,
+    SearchRunRepository,
+    UserRepository,
+)
+from app.services.ai_matcher import AIMatcher
+from app.services.candidate_matching_service import CandidateMatchingService
+from app.services.deduplication_service import DeduplicationService
+from app.services.discovery_service import DiscoveryService
+from app.services.duplicate_detection_service import DuplicateDetectionService
+from app.services.job_analysis_service import JobAnalysisService
+from app.services.normalization_service import NormalizationService
+from app.services.ranking_service import RankingService
+from app.services.rule_based_matcher import RuleBasedMatcher
+from app.sources import SourceRegistry
+from app.worker.tasks import AgentTasks
+
+
+def _build_llm_provider(settings: Settings) -> LLMProvider:
+    if settings.llm_provider == "openai" and settings.openai_api_key:
+        return OpenAIProvider(
+            get_shared_http_client(),
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            base_url=settings.openai_base_url,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
+    return MockLLMProvider()
+
+
+def build_agent_tasks(settings: Settings) -> AgentTasks:
+    prisma = prisma_client
+    redis_client = get_redis_client(settings)
+    provider = _build_llm_provider(settings)
+    matches = JobMatchRepository(prisma)
+
+    discovery = DiscoveryService(
+        registry=SourceRegistry(get_shared_http_client()),
+        job_sources=JobSourceRepository(prisma),
+        search_runs=SearchRunRepository(prisma),
+        normalizer=NormalizationService(),
+        deduper=DeduplicationService(
+            jobs=JobRepository(prisma),
+            listings=JobSourceListingRepository(prisma),
+            companies=CompanyRepository(prisma),
+            sources=JobSourceRepository(prisma),
+            detector=DuplicateDetectionService(settings),
+            settings=settings,
+        ),
+        redis_client=redis_client,
+        settings=settings,
+    )
+    analysis = JobAnalysisService(
+        provider=provider,
+        analyses=JobAnalysisRepository(prisma),
+        jobs=JobRepository(prisma),
+        settings=settings,
+    )
+    matching = CandidateMatchingService(
+        matcher=RuleBasedMatcher(settings),
+        ai_matcher=AIMatcher(provider),
+        matches=matches,
+        profiles=ProfileRepository(prisma),
+        analyses=JobAnalysisRepository(prisma),
+        jobs=JobRepository(prisma),
+    )
+    return AgentTasks(
+        discovery=discovery,
+        analysis=analysis,
+        matching=matching,
+        ranking=RankingService(matches),
+        users=UserRepository(prisma),
+        profiles=ProfileRepository(prisma),
+        notifications=NotificationRepository(prisma),
+        redis_client=redis_client,
+        settings=settings,
+    )

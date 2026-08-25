@@ -21,11 +21,13 @@ from app.repositories import (
     JobRepository,
     JobSourceListingRepository,
     JobSourceRepository,
+    NotificationRepository,
     ProfileRepository,
     SearchRunRepository,
     SkillRepository,
     UserRepository,
 )
+from app.services.agent_status_service import AgentStatusService
 from app.services.ai_matcher import AIMatcher
 from app.services.auth_service import AuthService
 from app.services.candidate_matching_service import CandidateMatchingService
@@ -231,6 +233,25 @@ def get_ranking_service(matches: JobMatchRepositoryDep) -> RankingService:
 
 
 RankingServiceDep = Annotated[RankingService, Depends(get_ranking_service)]
+
+
+def get_agent_status_service(
+    prisma: PrismaDep,
+    matches: JobMatchRepositoryDep,
+    search_runs: SearchRunRepositoryDep,
+    redis_client: RedisDep,
+    settings: SettingsDep,
+) -> AgentStatusService:
+    return AgentStatusService(
+        search_runs=search_runs,
+        matches=matches,
+        notifications=NotificationRepository(prisma),
+        redis_client=redis_client,
+        settings=settings,
+    )
+
+
+AgentStatusServiceDep = Annotated[AgentStatusService, Depends(get_agent_status_service)]
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import auth, health, jobs, search, users
+from app.api.routers import agent, auth, health, jobs, search, users
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.http import close_http_client
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router)
     app.include_router(search.router)
     app.include_router(jobs.router)
+    app.include_router(agent.router)
 
     return app
 

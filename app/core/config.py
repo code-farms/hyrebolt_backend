@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     dedup_weight_location: float = 0.15
     dedup_weight_posted_date: float = 0.10
 
+    # Daily agent (Phase 9). Timezone-aware schedule; IST default.
+    daily_search_time: str = "08:00"  # HH:MM in `timezone`
+    timezone: str = "Asia/Kolkata"
+    max_daily_results: int = 10
+    min_match_score: float = 60.0
+    agent_analyze_batch: int = 100
+    agent_match_batch: int = 200
+
     # Matching (Phase 8): spec weight table, configurable.
     match_weight_role: float = 0.25
     match_weight_skills: float = 0.25

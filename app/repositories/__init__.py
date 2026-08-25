@@ -8,6 +8,7 @@ from app.repositories.job_match_repository import JobMatchRepository
 from app.repositories.job_repository import JobRepository
 from app.repositories.job_source_listing_repository import JobSourceListingRepository
 from app.repositories.job_source_repository import JobSourceRepository
+from app.repositories.notification_repository import NotificationRepository
 from app.repositories.profile_repository import ProfileRepository
 from app.repositories.search_run_repository import SearchRunRepository
 from app.repositories.skill_repository import SkillRepository
@@ -21,6 +22,7 @@ __all__ = [
     "JobRepository",
     "JobSourceListingRepository",
     "JobSourceRepository",
+    "NotificationRepository",
     "ProfileRepository",
     "SearchRunRepository",
     "SkillRepository",

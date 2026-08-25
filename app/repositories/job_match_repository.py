@@ -62,6 +62,9 @@ class JobMatchRepository(BaseRepository):
         total = await self._prisma.jobmatch.count(where=where)
         return rows, total
 
+    async def count_updated_since(self, since: datetime) -> int:
+        return await self._prisma.jobmatch.count(where={"updatedAt": {"gte": since}})
+
     async def find_unmatched_job_ids(
         self, user_id: str, scoring_version: str, *, limit: int
     ) -> list[str]:
