@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
     agent,
+    applications,
     auth,
     dashboard,
     health,
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(agent.router)
     app.include_router(notifications.router)
     app.include_router(dashboard.router)
+    app.include_router(applications.router)
 
     return app
 

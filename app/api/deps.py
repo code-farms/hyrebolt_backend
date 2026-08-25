@@ -32,6 +32,7 @@ from app.repositories import (
 )
 from app.services.agent_status_service import AgentStatusService
 from app.services.ai_matcher import AIMatcher
+from app.services.application_service import ApplicationService
 from app.services.auth_service import AuthService
 from app.services.candidate_matching_service import CandidateMatchingService
 from app.services.daily_digest_service import DailyDigestService
@@ -272,6 +273,13 @@ def get_application_repository(prisma: PrismaDep) -> ApplicationRepository:
 ApplicationRepositoryDep = Annotated[
     ApplicationRepository, Depends(get_application_repository)
 ]
+
+
+def get_application_service(applications: ApplicationRepositoryDep) -> ApplicationService:
+    return ApplicationService(applications)
+
+
+ApplicationServiceDep = Annotated[ApplicationService, Depends(get_application_service)]
 
 
 def get_notification_repository(prisma: PrismaDep) -> NotificationRepository:
