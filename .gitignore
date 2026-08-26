@@ -17,6 +17,9 @@ app/db/generated/
 # Prisma migrations lock/dev artifacts are kept, but local dev DB URLs are not
 prisma/dev.db
 
+# Uploaded resumes (Phase 14) — a Docker volume in the stack, local dir otherwise
+data/
+
 # Logs
 *.log
 

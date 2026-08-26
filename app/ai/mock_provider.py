@@ -1,7 +1,13 @@
 """Deterministic provider for development and tests. Default in dev so the
 app never requires an API key. Extracts nothing it cannot see: the canned
 result echoes the prompt's own title marker and leaves everything else null,
-honoring the "never invent data" rule."""
+honoring the "never invent data" rule.
+
+The response shape is chosen from the casefolded FIRST LINE of the system
+prompt (every service's prompt opens with a one-line task statement):
+- mentions "resume" and "gap"  -> resume gap-analysis shape (Phase 14)
+- mentions "resume"            -> resume extraction shape (Phase 14)
+- otherwise                    -> job-analysis shape (Phase 7)"""
 
 from collections.abc import Callable
 from typing import Any
@@ -11,7 +17,7 @@ from app.ai.base import LLMProvider, LLMResult
 Responder = Callable[[str, str], dict[str, Any]]
 
 
-def _default_responder(system: str, prompt: str) -> dict[str, Any]:
+def _job_analysis_shape(prompt: str) -> dict[str, Any]:
     # The analysis prompt embeds "Title: <...>" — echo it back, nothing more.
     title = None
     for line in prompt.splitlines():
@@ -34,6 +40,33 @@ def _default_responder(system: str, prompt: str) -> dict[str, Any]:
         "industry": None,
         "confidence": 0.1,
     }
+
+
+def _resume_shape() -> dict[str, Any]:
+    return {
+        "summary": None,
+        "totalYearsExperience": None,
+        "experience": [],
+        "skills": [],
+        "technologies": [],
+        "projects": [],
+        "education": [],
+        "achievements": [],
+        "confidence": 0.1,
+    }
+
+
+def _gap_shape() -> dict[str, Any]:
+    return {"relevantExperience": [], "weakAreas": [], "suggestedImprovements": []}
+
+
+def _default_responder(system: str, prompt: str) -> dict[str, Any]:
+    first_line = (system.strip().splitlines() or [""])[0].casefold()
+    if "resume" in first_line and "gap" in first_line:
+        return _gap_shape()
+    if "resume" in first_line:
+        return _resume_shape()
+    return _job_analysis_shape(prompt)
 
 
 class MockLLMProvider(LLMProvider):

@@ -12,6 +12,9 @@ from app.repositories.job_source_listing_repository import JobSourceListingRepos
 from app.repositories.job_source_repository import JobSourceRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.profile_repository import ProfileRepository
+from app.repositories.resume_analysis_repository import ResumeAnalysisRepository
+from app.repositories.resume_gap_repository import ResumeGapRepository
+from app.repositories.resume_repository import ResumeRepository
 from app.repositories.saved_job_repository import SavedJobRepository
 from app.repositories.search_run_repository import SearchRunRepository
 from app.repositories.skill_repository import SkillRepository
@@ -29,6 +32,9 @@ __all__ = [
     "JobSourceRepository",
     "NotificationRepository",
     "ProfileRepository",
+    "ResumeAnalysisRepository",
+    "ResumeGapRepository",
+    "ResumeRepository",
     "SavedJobRepository",
     "SearchRunRepository",
     "SkillRepository",

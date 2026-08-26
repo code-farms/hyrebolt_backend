@@ -38,6 +38,8 @@ services:
       - ./prisma:/backend/prisma
       # Keep the generated Prisma client out of the bind mount.
       - api_generated:/backend/app/db/generated
+      # Uploaded resume originals (Phase 14); extracted text lives in Postgres.
+      - resume_data:/backend/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,3 +80,4 @@ volumes:
   postgres_data:
   api_generated:
   worker_generated:
+  resume_data:

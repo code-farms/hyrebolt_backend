@@ -7,6 +7,11 @@ class SkillRepository(BaseRepository):
     def normalize(name: str) -> str:
         return name.strip().lower()
 
+    async def list_names(self) -> list[str]:
+        """Catalog display names, used to spot skills in free text (Phase 14)."""
+        rows = await self._prisma.skill.find_many(order={"name": "asc"})
+        return [row.name for row in rows]
+
     async def upsert_by_name(self, name: str, *, category: str | None = None) -> Skill:
         normalized = self.normalize(name)
         return await self._prisma.skill.upsert(

@@ -78,6 +78,7 @@ class FakeProfile:
     digestMinScore: int = 70
     digestMaxJobs: int = 10
     digestTime: str | None = None
+    selectedResumeId: str | None = None  # Phase 14
     skills: list[SimpleNamespace] = field(default_factory=list)
 
 
@@ -121,6 +122,9 @@ class FakeProfileRepository:
         for key, value in data.items():
             setattr(profile, key, value)
         return profile
+
+    async def set_selected_resume(self, user_id: str, resume_id: str | None) -> FakeProfile:
+        return await self.upsert_for_user(user_id, {"selectedResumeId": resume_id})
 
     async def replace_skills(
         self, profile_id: str, items: list[tuple[str, str, float | None]]

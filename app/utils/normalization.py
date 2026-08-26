@@ -55,6 +55,37 @@ def normalize_title(title: str) -> str:
     return collapse_whitespace(text)
 
 
+# Phase 14 gap analysis: the handful of spellings that otherwise make the same
+# skill look "missing". Deliberately tiny and explicit — no stemming.
+_SKILL_ALIASES: dict[str, str] = {
+    "postgresql": "postgres",
+    "psql": "postgres",
+    "node js": "node",
+    "nodejs": "node",
+    "node.js": "node",
+    "react js": "react",
+    "reactjs": "react",
+    "react.js": "react",
+    "k8s": "kubernetes",
+    "js": "javascript",
+    "ts": "typescript",
+    "golang": "go",
+    "py": "python",
+    "aws": "amazon web services",
+    "gcp": "google cloud",
+}
+
+
+def normalize_skill(name: str) -> str:
+    """Casefold + punctuation-insensitive skill key with alias folding, so
+    'PostgreSQL' and 'postgres' compare equal. Empty input stays empty."""
+    text = unicodedata.normalize("NFKC", name).casefold().strip()
+    if text in _SKILL_ALIASES:
+        return _SKILL_ALIASES[text]
+    text = collapse_whitespace(re.sub(r"[^\w\s+#]", " ", text))
+    return _SKILL_ALIASES.get(text, text)
+
+
 def normalize_location(location: str | None) -> str | None:
     if location is None:
         return None

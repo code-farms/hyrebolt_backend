@@ -13,6 +13,7 @@ from app.api.routers import (
     health,
     jobs,
     notifications,
+    resumes,
     search,
     users,
 )
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(applications.router)
     app.include_router(companies.router)
+    app.include_router(resumes.router)
 
     return app
 

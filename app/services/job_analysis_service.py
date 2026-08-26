@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from app.ai import LLMError, LLMProvider, LLMRateLimitedError, LLMResponseError
-from app.ai.exceptions import LLMUnavailableError
+from app.ai import LLMError, LLMProvider, LLMResponseError, LLMResult
+from app.ai.retry import complete_json_with_retries
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.db.generated.models import Job, JobAnalysis
@@ -108,30 +108,17 @@ class JobAnalysisService:
         ]
         return "\n".join(lines)
 
-    async def _call_provider(self, prompt: str):
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                async with asyncio.timeout(self._settings.llm_timeout_seconds):
-                    return await self._provider.complete_json(
-                        system=SYSTEM_PROMPT, prompt=prompt
-                    )
-            except TimeoutError as exc:
-                error: LLMError = LLMUnavailableError("analysis timed out")
-                if attempt > self._settings.llm_max_retries:
-                    raise error from exc
-            except LLMError as exc:
-                if not exc.retryable or attempt > self._settings.llm_max_retries:
-                    raise
-                error = exc
-            delay = self._settings.llm_retry_base_delay_seconds * (2 ** (attempt - 1))
-            if isinstance(error, LLMRateLimitedError) and error.retry_after is not None:
-                delay = max(delay, error.retry_after)
-            logger.warning(
-                "job_analysis_retry", attempt=attempt, delay_seconds=round(delay, 2)
-            )
-            await self._sleep(delay)
+    async def _call_provider(self, prompt: str) -> LLMResult:
+        return await complete_json_with_retries(
+            self._provider,
+            system=SYSTEM_PROMPT,
+            prompt=prompt,
+            timeout_seconds=self._settings.llm_timeout_seconds,
+            max_retries=self._settings.llm_max_retries,
+            base_delay=self._settings.llm_retry_base_delay_seconds,
+            sleep=self._sleep,
+            event="job_analysis_retry",
+        )
 
     def _validate(self, content: dict) -> JobAnalysisResult:
         try:

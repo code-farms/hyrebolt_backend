@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     match_weight_watchlist: float = 0.10  # Phase 13 watchlist component
     match_batch_limit: int = 50
 
+    # Resumes (Phase 14): originals on local disk, extracted text in the DB.
+    resume_storage_dir: str = "data/resumes"
+    resume_max_upload_mb: int = 5
+    resume_max_text_chars: int = 30000
+    resume_extract_timeout_seconds: float = 20.0
+    resume_upload_rate_limit_per_minute: int = 10
+
     # AI (Phase 7). Default "mock": no API key needed in dev/tests.
     llm_provider: Literal["mock", "openai"] = "mock"
     openai_api_key: str | None = None

@@ -17,6 +17,11 @@ class ProfileRepository(BaseRepository):
             data={"create": {"userId": user_id, **data}, "update": data},
         )
 
+    async def set_selected_resume(self, user_id: str, resume_id: str | None) -> UserProfile:
+        """Phase 14: one write; the column is unique so two resumes can never
+        both be selected, and deleting the resume nulls it (SetNull)."""
+        return await self.upsert_for_user(user_id, {"selectedResumeId": resume_id})
+
     async def replace_skills(
         self, profile_id: str, items: list[tuple[str, str, float | None]]
     ) -> None:

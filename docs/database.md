@@ -75,6 +75,16 @@ creates Job rows** — jobs only ever come from real discovery.
   on the user's watchlist; `scoringVersion` is set to `"stale"` for a user's
   matches at a company whenever their watchlist entry changes, so the nightly
   `match_jobs` re-scores them.
+- **Resumes** (Phase 14): `Resume` ─1:N─ `ResumeVersion` ─1:1─ `ResumeAnalysis`
+  and ─1:N─ `ResumeGapAnalysis` ─N:1─ `Job`. The uploaded original lives on disk
+  (`ResumeVersion.storagePath`, relative to `RESUME_STORAGE_DIR`, a named volume
+  in docker-compose); the extracted text is stored in `extractedText` so
+  analysis and preview never depend on the file. All four tables hard-delete
+  (cascade from Resume). `UserProfile.selectedResumeId` is `@unique` + SetNull:
+  exactly one resume can be selected and deleting it clears the selection.
+  `ResumeAnalysis` mirrors `JobAnalysis` (the DB is the cache, `promptVersion`
+  invalidates); `ResumeGapAnalysis` caches only the AI portion of a gap
+  analysis — matched/missing skills are recomputed on every read.
 - **Search-friendly fields without preview features**: `normalizedTitle` and
   `normalizedLocation` are btree-indexed (including the composite pair used
   by dedup's company+title+location signal). Prisma's full-text search is a
@@ -98,7 +108,9 @@ User ─1:1─ UserProfile ─1:N─ UserSkill ─N:1─ Skill
   ├─1:N─ JobMatch ────N:1─┼── Job ─N:1─ Company ─1:N─ CompanyWatchlist ─N:1─ User
   ├─1:N─ Notification     │    ├─N:1─ JobSource
   ├─1:N─ SearchRun        │    ├─1:N─ JobSourceListing ─N:1─ JobSource
-  └─1:N─ CompanyWatchlist │    └─self─ duplicateOf/duplicates
-                          │
+  ├─1:N─ CompanyWatchlist │    ├─self─ duplicateOf/duplicates
+  └─1:N─ Resume ─1:N─ ResumeVersion ─1:1─ ResumeAnalysis
+                          │         └─1:N─ ResumeGapAnalysis ─N:1─ Job
+      UserProfile.selectedResumeId ─N:1─ Resume (SetNull)
       Application ─1:N─ ApplicationEvent
 ```

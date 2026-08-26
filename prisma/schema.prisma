@@ -129,6 +129,7 @@ model User {
   notifications Notification[]
   watchlist     CompanyWatchlist[]
   searchRuns    SearchRun[]
+  resumes       Resume[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -170,6 +171,11 @@ model UserProfile {
   timezone           String  @default("Asia/Kolkata")
 
   skills UserSkill[]
+
+  // Phase 14: the resume used for gap analysis. Nullable + SetNull so deleting
+  // the resume clears the selection atomically; @unique makes it 1:1.
+  selectedResumeId String? @unique
+  selectedResume   Resume? @relation(fields: [selectedResumeId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -303,6 +309,7 @@ model Job {
   applications Application[]
   listings     JobSourceListing[]
   analysis     JobAnalysis?
+  resumeGaps   ResumeGapAnalysis[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -572,4 +579,86 @@ model CompanyWatchlist {
 
   @@unique([userId, companyId])
   @@index([companyId])
+}
+
+// ─────────────────────────── RESUMES (Phase 14) ───────────────────────────
+
+model Resume {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title String
+
+  versions   ResumeVersion[]
+  selectedBy UserProfile? // back-relation of UserProfile.selectedResumeId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// One uploaded file. The original lives on disk (storagePath, relative to
+// RESUME_STORAGE_DIR); the extracted text lives here so analysis and preview
+// never depend on the file being present.
+model ResumeVersion {
+  id       String @id @default(uuid())
+  resumeId String
+  resume   Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  versionNumber Int
+  fileName      String
+  mimeType      String
+  fileSize      Int
+  contentHash   String // sha256 of the upload; identical re-uploads are rejected
+  storagePath   String
+  extractedText String
+
+  analysis    ResumeAnalysis?
+  gapAnalyses ResumeGapAnalysis[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([resumeId, versionNumber])
+}
+
+// Same envelope as JobAnalysis: the DB is the cache, promptVersion invalidates.
+model ResumeAnalysis {
+  id        String        @id @default(uuid())
+  versionId String        @unique
+  version   ResumeVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  analysis   Json // ResumeAnalysisResult — nulls/[] where the resume is silent
+  confidence Float?
+
+  model         String?
+  promptVersion String?
+  inputTokens   Int?
+  outputTokens  Int?
+  processedAt   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Caches only the AI portion of a resume↔job gap analysis; the deterministic
+// matched/missing skill sets are recomputed on every read.
+model ResumeGapAnalysis {
+  id        String        @id @default(uuid())
+  versionId String
+  version   ResumeVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  analysis      Json
+  model         String?
+  promptVersion String
+  processedAt   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([versionId, jobId])
+  @@index([jobId])
 }

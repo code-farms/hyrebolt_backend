@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Annotated
 
 import jwt
@@ -26,6 +27,9 @@ from app.repositories import (
     JobSourceRepository,
     NotificationRepository,
     ProfileRepository,
+    ResumeAnalysisRepository,
+    ResumeGapRepository,
+    ResumeRepository,
     SavedJobRepository,
     SearchRunRepository,
     SkillRepository,
@@ -46,6 +50,10 @@ from app.services.job_analysis_service import JobAnalysisService
 from app.services.normalization_service import NormalizationService
 from app.services.profile_service import ProfileService
 from app.services.ranking_service import RankingService
+from app.services.resume_analysis_service import ResumeAnalysisService
+from app.services.resume_gap_service import ResumeGapService
+from app.services.resume_service import ResumeService
+from app.services.resume_storage import ResumeStorage
 from app.services.rule_based_matcher import RuleBasedMatcher
 from app.services.watchlist_boards import WatchlistBoardsProvider
 from app.sources import SourceRegistry
@@ -273,6 +281,72 @@ def get_company_service(
 
 
 CompanyServiceDep = Annotated[CompanyService, Depends(get_company_service)]
+
+_resume_storage: ResumeStorage | None = None
+
+
+def get_resume_storage(settings: SettingsDep) -> ResumeStorage:
+    global _resume_storage
+    if _resume_storage is None:
+        _resume_storage = ResumeStorage(Path(settings.resume_storage_dir))
+    return _resume_storage
+
+
+ResumeStorageDep = Annotated[ResumeStorage, Depends(get_resume_storage)]
+
+
+def get_resume_repository(prisma: PrismaDep) -> ResumeRepository:
+    return ResumeRepository(prisma)
+
+
+ResumeRepositoryDep = Annotated[ResumeRepository, Depends(get_resume_repository)]
+
+
+def get_resume_service(
+    resumes: ResumeRepositoryDep,
+    profiles: ProfileRepositoryDep,
+    storage: ResumeStorageDep,
+    settings: SettingsDep,
+) -> ResumeService:
+    return ResumeService(resumes=resumes, profiles=profiles, storage=storage, settings=settings)
+
+
+ResumeServiceDep = Annotated[ResumeService, Depends(get_resume_service)]
+
+
+def get_resume_analysis_service(
+    provider: LLMProviderDep, prisma: PrismaDep, skills: SkillRepositoryDep, settings: SettingsDep
+) -> ResumeAnalysisService:
+    return ResumeAnalysisService(
+        provider=provider,
+        analyses=ResumeAnalysisRepository(prisma),
+        skills=skills,
+        settings=settings,
+    )
+
+
+ResumeAnalysisServiceDep = Annotated[ResumeAnalysisService, Depends(get_resume_analysis_service)]
+
+
+def get_resume_gap_service(
+    provider: LLMProviderDep,
+    prisma: PrismaDep,
+    job_analysis: JobAnalysisServiceDep,
+    profiles: ProfileRepositoryDep,
+    skills: SkillRepositoryDep,
+    settings: SettingsDep,
+) -> ResumeGapService:
+    return ResumeGapService(
+        provider=provider,
+        gaps=ResumeGapRepository(prisma),
+        job_analysis=job_analysis,
+        profiles=profiles,
+        skills=skills,
+        settings=settings,
+    )
+
+
+ResumeGapServiceDep = Annotated[ResumeGapService, Depends(get_resume_gap_service)]
 
 
 def get_ranking_service(matches: JobMatchRepositoryDep) -> RankingService:
