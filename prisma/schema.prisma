@@ -119,6 +119,17 @@ enum ApplicationDraftKind {
   APPLICATION_NOTES
 }
 
+// Phase 16 personalisation signals.
+enum PreferenceSignalKind {
+  LIKE
+  DISLIKE
+  SAVE
+  APPLY
+  NOT_RELEVANT
+  HIDE_COMPANY
+  HIDE_ROLE
+}
+
 // ─────────────────────────── USER ───────────────────────────
 
 model User {
@@ -139,6 +150,7 @@ model User {
   searchRuns    SearchRun[]
   resumes       Resume[]
   drafts        ApplicationDraft[]
+  preferenceSignals UserPreferenceSignal[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -320,6 +332,7 @@ model Job {
   analysis     JobAnalysis?
   resumeGaps   ResumeGapAnalysis[]
   drafts       ApplicationDraft[]
+  preferenceSignals UserPreferenceSignal[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -702,5 +715,36 @@ model ApplicationDraft {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, jobId, kind])
+  @@index([jobId])
+}
+
+// ─────────────────────────── PERSONALIZATION (Phase 16) ───────────────────────────
+
+// One explicit or implicit feedback event per (user, job, kind). The job's
+// facts are snapshotted at signal time so learned preferences are a pure,
+// explainable aggregate over these rows — and survive a purged job (SetNull).
+// The personalised ranking score itself is computed on read, never stored.
+model UserPreferenceSignal {
+  id     String  @id @default(uuid())
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId  String?
+  job    Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  kind   PreferenceSignalKind
+  weight Float   @default(1) // signed contribution; 0 for HIDE_* (exclusions)
+
+  roleKey      String // job.normalizedTitle
+  roleLabel    String // job.title, for explanations
+  companyId    String?
+  companyKey   String // normalize_company(job.companyName)
+  companyLabel String
+  locationKey  String? // job.normalizedLocation
+  workMode     String? // REMOTE | HYBRID | ONSITE
+  skills       String[] @default([]) // normalized analysis skills
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, jobId, kind])
+  @@index([userId, kind])
   @@index([jobId])
 }

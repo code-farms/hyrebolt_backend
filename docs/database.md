@@ -85,6 +85,13 @@ creates Job rows** — jobs only ever come from real discovery.
   `ResumeAnalysis` mirrors `JobAnalysis` (the DB is the cache, `promptVersion`
   invalidates); `ResumeGapAnalysis` caches only the AI portion of a gap
   analysis — matched/missing skills are recomputed on every read.
+- **Preference signals** (Phase 16): `UserPreferenceSignal` records one user
+  action per (user, job, kind) — LIKE/DISLIKE/SAVE/APPLY/NOT_RELEVANT/
+  HIDE_COMPANY/HIDE_ROLE — with the job's facts (role, company, location, work
+  mode, skills) snapshotted onto the row, so learned preferences are a pure
+  aggregate a user can read back and reset. `jobId` is nullable + SetNull so a
+  purged job never erases learning. The personalised ranking score is computed
+  on read from these rows and the match; it is never stored.
 - **Application drafts** (Phase 15): `ApplicationDraft` is unique per
   `(userId, jobId, kind)` — cover letter, recruiter message, resume tailoring,
   application notes. `content` is what the user edits; `generatedContent` keeps
@@ -120,5 +127,6 @@ User ─1:1─ UserProfile ─1:N─ UserSkill ─N:1─ Skill
                           │         └─1:N─ ResumeGapAnalysis ─N:1─ Job
       UserProfile.selectedResumeId ─N:1─ Resume (SetNull)
       User ─1:N─ ApplicationDraft ─N:1─ Job (─N:1─ ResumeVersion, SetNull)
+      User ─1:N─ UserPreferenceSignal ─N:1─ Job (SetNull)
       Application ─1:N─ ApplicationEvent
 ```

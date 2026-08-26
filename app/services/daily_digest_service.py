@@ -13,10 +13,11 @@ from datetime import date
 from typing import Any
 
 from app.core.logging import get_logger
-from app.db.generated.models import JobMatch, User, UserProfile
+from app.db.generated.models import User, UserProfile
 from app.models import NotificationChannel, NotificationStatus, NotificationType
 from app.notifications import NotificationProvider, NotificationSendError
 from app.repositories import NotificationRepository, ProfileRepository
+from app.schemas.match import RankedMatch
 from app.services.ranking_service import RankingService
 
 logger = get_logger(__name__)
@@ -44,6 +45,10 @@ class DigestItem:
     source: str | None
     applyUrl: str | None
     band: str
+    # Phase 16: personalised order. `score`/`band` stay on the base match score
+    # so the email agrees with the dashboard; `rankScore` is what ordered it.
+    rankScore: float = 0.0
+    explanation: str | None = None
 
 
 @dataclass
@@ -188,7 +193,8 @@ class DailyDigestService:
             payload=digest.payload(),
         )
 
-    def _item_from_match(self, match: JobMatch) -> DigestItem:
+    def _item_from_match(self, ranked: RankedMatch) -> DigestItem:
+        match = ranked.match
         job = match.job
         listing = _primary_listing(job)
         source = None
@@ -210,6 +216,8 @@ class DailyDigestService:
             source=source,
             applyUrl=apply_url,
             band=_band(match.overallScore),
+            rankScore=ranked.ranking.finalScore,
+            explanation=ranked.ranking.explanations[0] if ranked.ranking.explanations else None,
         )
 
     def _render_body(self, items: list[DigestItem]) -> str:
@@ -220,7 +228,12 @@ class DailyDigestService:
                 continue
             lines.append(_BAND_TITLES[band])
             for item in band_items:
-                lines.append(f"• {item.title} @ {item.company} — score {item.score}")
+                score = f"score {item.score}"
+                if item.rankScore and item.rankScore != item.score:
+                    score += f" · personalised {item.rankScore}"
+                lines.append(f"• {item.title} @ {item.company} — {score}")
+                if item.explanation:
+                    lines.append(f"  {item.explanation}")
                 details = []
                 if item.location:
                     details.append(item.location)

@@ -7,21 +7,25 @@ from app.api.deps import (
     CurrentUserDep,
     JobAnalysisServiceDep,
     JobRepositoryDep,
+    PreferenceSignalServiceDep,
     RankingServiceDep,
     SavedJobRepositoryDep,
     SettingsDep,
 )
 from app.core.exceptions import NotFoundError
+from app.models import PreferenceSignalKind
 from app.repositories.job_repository import JobFilters
 from app.schemas.analysis import JobAnalysisOut
 from app.schemas.job import JobListOut, JobOut, analysis_out, job_out
 from app.schemas.match import (
     FeedbackIn,
+    HideIn,
     MatchOut,
     RecommendedListOut,
     match_out,
     recommended_out,
 )
+from app.schemas.preferences import LearnedPreferencesOut, learned_preferences_out
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
@@ -30,6 +34,7 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 async def list_jobs(
     user: CurrentUserDep,
     jobs: JobRepositoryDep,
+    ranking: RankingServiceDep,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     source: str | None = Query(default=None),
@@ -54,10 +59,18 @@ async def list_jobs(
         date_posted_days=datePosted,
     )
     if sort == "score" or minScore is not None:
-        match_rows, total = await jobs.list_by_score(
-            user.id, filters, min_score=minScore or 0, limit=limit, offset=offset
+        # Personalised order (Phase 16) over the base-score candidates; nothing
+        # is hidden in the browse view.
+        ranked, total = await ranking.ranked_jobs(
+            user, filters, min_score=minScore or 0, limit=limit, offset=offset
         )
-        items = [job_out(row.job) for row in match_rows if row.job is not None]
+        items = []
+        for entry in ranked:
+            if entry.match.job is None:
+                continue
+            out = job_out(entry.match.job)
+            out.ranking = entry.ranking
+            items.append(out)
     else:
         rows, total = await jobs.list_filtered(
             user.id, filters, limit=limit, offset=offset
@@ -130,11 +143,13 @@ async def save_job(
     user: CurrentUserDep,
     jobs: JobRepositoryDep,
     saved: SavedJobRepositoryDep,
+    signals: PreferenceSignalServiceDep,
 ) -> JobOut:
     job = await jobs.get_with_listings(job_id)
     if job is None or job.deletedAt is not None:
         raise NotFoundError("Job not found.")
     await saved.save(user.id, job_id)  # idempotent upsert
+    await signals.record(user, job, PreferenceSignalKind.SAVE)  # Phase 16: saving teaches
     out = job_out(job)
     out.saved = True
     return out
@@ -146,14 +161,33 @@ async def unsave_job(
     user: CurrentUserDep,
     jobs: JobRepositoryDep,
     saved: SavedJobRepositoryDep,
+    signals: PreferenceSignalServiceDep,
 ) -> JobOut:
     job = await jobs.get_with_listings(job_id)
     if job is None or job.deletedAt is not None:
         raise NotFoundError("Job not found.")
     await saved.unsave(user.id, job_id)  # idempotent
+    await signals.remove(user, job, PreferenceSignalKind.SAVE)
     out = job_out(job)
     out.saved = False
     return out
+
+
+@router.post("/{job_id}/hide", response_model=LearnedPreferencesOut)
+async def hide_job(
+    job_id: str,
+    payload: HideIn,
+    user: CurrentUserDep,
+    jobs: JobRepositoryDep,
+    signals: PreferenceSignalServiceDep,
+) -> LearnedPreferencesOut:
+    """Phase 16: stop recommending this company (or roles like this one).
+    Reversible from the preferences page."""
+    job = await jobs.get_with_listings(job_id)
+    if job is None or job.deletedAt is not None:
+        raise NotFoundError("Job not found.")
+    await signals.record(user, job, payload.to_signal())
+    return learned_preferences_out(await signals.learn(user))
 
 
 @router.post("/{job_id}/analyze", response_model=JobAnalysisOut)
@@ -193,9 +227,12 @@ async def job_feedback(
     user: CurrentUserDep,
     jobs: JobRepositoryDep,
     matching: CandidateMatchingServiceDep,
+    signals: PreferenceSignalServiceDep,
 ) -> MatchOut:
     job = await jobs.get_by_id(job_id)
     if job is None or job.deletedAt is not None:
         raise NotFoundError("Job not found.")
     match = await matching.record_feedback(user, job, payload.to_enum())
+    kind, weight = payload.to_signal()  # Phase 16: feedback also teaches
+    await signals.record(user, job, kind, weight=weight)
     return match_out(match)

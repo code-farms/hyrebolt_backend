@@ -17,6 +17,7 @@ from app.repositories import (
     JobSourceListingRepository,
     JobSourceRepository,
     NotificationRepository,
+    PreferenceSignalRepository,
     ProfileRepository,
     SearchRunRepository,
     UserRepository,
@@ -29,7 +30,8 @@ from app.services.discovery_service import DiscoveryService
 from app.services.duplicate_detection_service import DuplicateDetectionService
 from app.services.job_analysis_service import JobAnalysisService
 from app.services.normalization_service import NormalizationService
-from app.services.ranking_service import RankingService
+from app.services.preference_signal_service import PreferenceSignalService
+from app.services.ranking_service import RankingService, RankingWeights
 from app.services.rule_based_matcher import RuleBasedMatcher
 from app.services.watchlist_boards import WatchlistBoardsProvider
 from app.sources import SourceRegistry
@@ -88,7 +90,14 @@ def build_agent_tasks(settings: Settings) -> AgentTasks:
         watchlists=watchlists,
     )
     digest = DailyDigestService(
-        ranking=RankingService(matches),
+        ranking=RankingService(
+            matches,
+            jobs=JobRepository(prisma),
+            signals=PreferenceSignalService(
+                PreferenceSignalRepository(prisma), JobAnalysisRepository(prisma)
+            ),
+            weights=RankingWeights.from_settings(settings),
+        ),
         profiles=ProfileRepository(prisma),
         notifications=NotificationRepository(prisma),
         providers=build_providers(settings, get_shared_http_client()),

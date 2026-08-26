@@ -4,8 +4,9 @@ from typing import Any
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
 from app.db.generated.models import Application, User
-from app.models import ApplicationStatus
+from app.models import ApplicationStatus, PreferenceSignalKind
 from app.repositories import ApplicationRepository
+from app.services.preference_signal_service import PreferenceSignalService
 
 logger = get_logger(__name__)
 
@@ -22,8 +23,13 @@ STATUS_LABELS: dict[ApplicationStatus, str] = {
 
 
 class ApplicationService:
-    def __init__(self, applications: ApplicationRepository) -> None:
+    def __init__(
+        self,
+        applications: ApplicationRepository,
+        signals: PreferenceSignalService | None = None,
+    ) -> None:
         self._applications = applications
+        self._signals = signals  # Phase 16: applying is the strongest preference signal
 
     async def track_job(
         self, user: User, job_id: str, status: ApplicationStatus = ApplicationStatus.SAVED
@@ -33,12 +39,17 @@ class ApplicationService:
         if existing is not None:
             return existing
         application = await self._applications.create(user.id, job_id, status)
+        if status == ApplicationStatus.APPLIED:
+            # Created straight into APPLIED: stamp the date like a transition would.
+            await self._applications.update(application.id, {"appliedAt": datetime.now(UTC)})
         await self._applications.add_event(
             application.id, title=STATUS_LABELS[status], status=status
         )
         logger.info("application_tracked", job_id=job_id, user_id=user.id, status=status)
         refreshed = await self._applications.get_for_user(application.id, user.id)
         assert refreshed is not None
+        if status == ApplicationStatus.APPLIED:
+            await self._record_apply(user, refreshed)
         return refreshed
 
     async def get(self, user: User, application_id: str) -> Application:
@@ -68,7 +79,8 @@ class ApplicationService:
             return application
         data: dict[str, Any] = {"status": status}
         # First transition into APPLIED stamps the application date.
-        if status == ApplicationStatus.APPLIED and application.appliedAt is None:
+        first_apply = status == ApplicationStatus.APPLIED and application.appliedAt is None
+        if first_apply:
             data["appliedAt"] = datetime.now(UTC)
         updated = await self._applications.update(application_id, data)
         await self._applications.add_event(
@@ -83,7 +95,15 @@ class ApplicationService:
             status=str(status),
         )
         refreshed = await self._applications.get_for_user(application_id, user.id)
+        if first_apply:
+            await self._record_apply(user, refreshed or updated)
         return refreshed or updated
+
+    async def _record_apply(self, user: User, application: Application) -> None:
+        job = getattr(application, "job", None)
+        if self._signals is None or job is None:
+            return
+        await self._signals.record(user, job, PreferenceSignalKind.APPLY)
 
     async def update_details(
         self, user: User, application_id: str, data: dict[str, Any]

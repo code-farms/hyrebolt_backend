@@ -62,6 +62,40 @@ class JobMatchRepository(BaseRepository):
         total = await self._prisma.jobmatch.count(where=where)
         return rows, total
 
+    async def list_candidates_for_user(
+        self, user_id: str, *, min_score: float, limit: int
+    ) -> list[JobMatch]:
+        """Phase 16 ranking window: the top `limit` matches by base score, from
+        offset 0, minus what the user dismissed (NOT_RELEVANT) or already applied
+        to. Lean include — the re-ranker needs the job + analysis, not duplicates."""
+        return await self._prisma.jobmatch.find_many(
+            where={
+                "userId": user_id,
+                "overallScore": {"gte": min_score},
+                "OR": [{"feedback": None}, {"feedback": {"not": MatchFeedback.NOT_RELEVANT}}],
+                "job": {
+                    "is": {
+                        "deletedAt": None,
+                        "applications": {
+                            "none": {"userId": user_id, "deletedAt": None, "appliedAt": {"not": None}}
+                        },
+                    }
+                },
+            },  # type: ignore[arg-type]
+            order={"overallScore": "desc"},
+            take=limit,
+            include={
+                "job": {
+                    "include": {
+                        "listings": {"include": {"source": True}},
+                        "duplicates": True,
+                        "analysis": True,
+                        "savedBy": {"where": {"userId": user_id}},
+                    }
+                }
+            },  # type: ignore[arg-type]
+        )
+
     async def mark_stale_for_company(
         self, user_id: str, company_id: str, company_name: str
     ) -> int:

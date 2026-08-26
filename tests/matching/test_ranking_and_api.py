@@ -70,11 +70,12 @@ async def test_ranking_orders_filters_and_excludes_not_relevant() -> None:
     rows, total = await ranking.recommended(U(), limit=10, offset=0, min_score=50)  # type: ignore[arg-type]
 
     assert total == 1  # 40 filtered by min_score, NOT_RELEVANT hidden, other user's hidden
-    assert rows[0].jobId == "j0"
+    assert rows[0].match.jobId == "j0"
+    assert rows[0].ranking.finalScore == 90 and rows[0].ranking.explanations == []
 
     all_rows, all_total = await ranking.recommended(U(), limit=10, offset=0, min_score=0)  # type: ignore[arg-type]
     assert all_total == 2
-    assert [r.overallScore for r in all_rows] == [90, 40]
+    assert [r.match.overallScore for r in all_rows] == [90, 40]
 
 
 class StubMatchingService:
@@ -167,8 +168,9 @@ async def test_recommended_returns_ranked_job_match_pairs(
     body = response.json()
     assert body["total"] == 2
     first = body["items"][0]
-    assert {"job", "match"} <= set(first)
+    assert {"job", "match", "ranking"} <= set(first)
     assert first["match"]["overallScore"] == 77
+    assert first["ranking"]["finalScore"] == 77 and first["job"]["ranking"]["baseScore"] == 77
     assert first["match"]["componentScores"].keys() >= {"role", "skill", "company"}
     assert first["job"]["id"] in ("j1", "j2")
 

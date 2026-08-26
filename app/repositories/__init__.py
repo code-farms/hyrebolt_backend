@@ -12,6 +12,7 @@ from app.repositories.job_repository import JobRepository
 from app.repositories.job_source_listing_repository import JobSourceListingRepository
 from app.repositories.job_source_repository import JobSourceRepository
 from app.repositories.notification_repository import NotificationRepository
+from app.repositories.preference_signal_repository import PreferenceSignalRepository
 from app.repositories.profile_repository import ProfileRepository
 from app.repositories.resume_analysis_repository import ResumeAnalysisRepository
 from app.repositories.resume_gap_repository import ResumeGapRepository
@@ -33,6 +34,7 @@ __all__ = [
     "JobSourceListingRepository",
     "JobSourceRepository",
     "NotificationRepository",
+    "PreferenceSignalRepository",
     "ProfileRepository",
     "ResumeAnalysisRepository",
     "ResumeGapRepository",

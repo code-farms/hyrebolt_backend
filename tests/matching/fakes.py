@@ -185,6 +185,13 @@ class FakeAnalysisRepoForMatching:
         return self.rows.get(job_id)
 
 
+def ranked(row: Any):
+    """Wrap a match row the way RankingService returns it (base-only ranking)."""
+    from app.schemas.match import RankedMatch, base_only_ranking
+
+    return RankedMatch(match=row, ranking=base_only_ranking(row))
+
+
 class FakeJobLookup:
     def __init__(self, jobs_by_id: dict[str, Any]) -> None:
         self.jobs_by_id = jobs_by_id

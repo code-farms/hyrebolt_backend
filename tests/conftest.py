@@ -11,6 +11,7 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production-0123456789abcdef")
 
 from app.api.deps import (
+    get_preference_signal_service,
     get_profile_repository,
     get_redis,
     get_skill_repository,
@@ -24,6 +25,7 @@ from tests.fakes import (
     FakeSkillRepository,
     FakeUserRepository,
 )
+from tests.ranking.fakes import make_signal_service
 
 
 @pytest_asyncio.fixture
@@ -42,6 +44,10 @@ async def auth_client() -> AsyncIterator[tuple[AsyncClient, FakeDB, FakeRedis]]:
     app.dependency_overrides[get_profile_repository] = lambda: FakeProfileRepository(db)
     app.dependency_overrides[get_skill_repository] = lambda: FakeSkillRepository(db)
     app.dependency_overrides[get_redis] = lambda: fake_redis
+    # Phase 16: save/feedback/apply routes record preference signals; keep them
+    # in memory so every API test stays hermetic.
+    signal_service, _ = make_signal_service()
+    app.dependency_overrides[get_preference_signal_service] = lambda: signal_service
     transport = ASGITransport(app=app)
     try:
         async with AsyncClient(transport=transport, base_url="http://test") as ac:

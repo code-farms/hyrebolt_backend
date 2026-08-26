@@ -1,9 +1,22 @@
 # camelCase wire contract, mirrored by the frontend zod schemas (Phase 11).
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.db.generated.models import Job, JobAnalysis
+
+
+class RankingOut(BaseModel):
+    """Phase 16: the personalised score and where every point came from.
+    finalScore = baseScore + preference + freshness + company + feedback (clamped 0-100)."""
+
+    finalScore: float
+    baseScore: float
+    preferenceScore: float
+    freshnessScore: float
+    companyScore: float
+    feedbackScore: float
+    explanations: list[str] = Field(default_factory=list)
 from app.models import EmploymentType, MatchFeedback, MatchRecommendation
 from app.schemas.analysis import JobAnalysisOut, JobAnalysisResult
 
@@ -57,6 +70,8 @@ class JobOut(BaseModel):
     # Viewer context (Phase 11): the caller's match summary + saved flag.
     match: JobMatchSummaryOut | None = None
     saved: bool = False
+    # Phase 16: set on personalised lists (recommended, sort=score).
+    ranking: RankingOut | None = None
     createdAt: datetime
 
 

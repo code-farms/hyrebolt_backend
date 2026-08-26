@@ -14,6 +14,7 @@ from app.api.routers import (
     health,
     jobs,
     notifications,
+    preferences,
     resumes,
     search,
     users,
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(companies.router)
     app.include_router(resumes.router)
     app.include_router(assistant.router)
+    app.include_router(preferences.router)
 
     return app
 

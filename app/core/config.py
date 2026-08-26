@@ -85,6 +85,18 @@ class Settings(BaseSettings):
     # Application assistant (Phase 15): each generate/regenerate is one request.
     assistant_rate_limit_per_minute: int = 20
 
+    # Personalised ranking (Phase 16). The feed re-ranks this many top base-score
+    # candidates in Python; every adjustment below is a capped, explainable delta
+    # on the 0-100 deterministic match score.
+    ranking_candidate_limit: int = 300
+    ranking_preference_cap: float = 15.0
+    ranking_freshness_cap: float = 6.0
+    ranking_company_boost_cap: float = 5.0
+    ranking_company_penalty: float = 10.0
+    ranking_feedback_boost_cap: float = 5.0
+    ranking_feedback_penalty: float = 15.0
+    ranking_role_hide_similarity: float = 0.75
+
     # AI (Phase 7). Default "mock": no API key needed in dev/tests.
     llm_provider: Literal["mock", "openai"] = "mock"
     openai_api_key: str | None = None

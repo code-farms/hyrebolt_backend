@@ -9,7 +9,7 @@ from app.services.daily_digest_service import DailyDigestService
 from app.worker import tasks as task_module
 from app.worker.tasks import AgentTasks
 from tests.fakes import FakeRedis
-from tests.matching.fakes import FakeMatchRow
+from tests.matching.fakes import FakeMatchRow, ranked
 
 settings = get_settings()
 
@@ -73,7 +73,7 @@ class FakeRanking:
         rows = [
             r for r in self.rows_by_user.get(user.id, []) if r.overallScore >= min_score
         ]
-        return rows[:limit], len(rows)
+        return [ranked(r) for r in rows[:limit]], len(rows)
 
 
 class FakeNotifications:

@@ -27,6 +27,7 @@ from app.repositories import (
     JobSourceListingRepository,
     JobSourceRepository,
     NotificationRepository,
+    PreferenceSignalRepository,
     ProfileRepository,
     ResumeAnalysisRepository,
     ResumeGapRepository,
@@ -50,8 +51,9 @@ from app.services.duplicate_detection_service import DuplicateDetectionService
 from app.services.health_service import HealthService
 from app.services.job_analysis_service import JobAnalysisService
 from app.services.normalization_service import NormalizationService
+from app.services.preference_signal_service import PreferenceSignalService
 from app.services.profile_service import ProfileService
-from app.services.ranking_service import RankingService
+from app.services.ranking_service import RankingService, RankingWeights
 from app.services.resume_analysis_service import ResumeAnalysisService
 from app.services.resume_gap_service import ResumeGapService
 from app.services.resume_service import ResumeService
@@ -385,8 +387,46 @@ ApplicationAssistantServiceDep = Annotated[
 ]
 
 
-def get_ranking_service(matches: JobMatchRepositoryDep) -> RankingService:
-    return RankingService(matches)
+def get_preference_signal_repository(prisma: PrismaDep) -> PreferenceSignalRepository:
+    return PreferenceSignalRepository(prisma)
+
+
+PreferenceSignalRepositoryDep = Annotated[
+    PreferenceSignalRepository, Depends(get_preference_signal_repository)
+]
+
+
+def get_preference_signal_service(
+    signals: PreferenceSignalRepositoryDep, prisma: PrismaDep
+) -> PreferenceSignalService:
+    return PreferenceSignalService(signals, JobAnalysisRepository(prisma))
+
+
+PreferenceSignalServiceDep = Annotated[
+    PreferenceSignalService, Depends(get_preference_signal_service)
+]
+
+
+def _build_ranking_service(prisma: Prisma, matches: JobMatchRepository, settings: Settings) -> RankingService:
+    return RankingService(
+        matches,
+        jobs=JobRepository(prisma),
+        signals=PreferenceSignalService(
+            PreferenceSignalRepository(prisma), JobAnalysisRepository(prisma)
+        ),
+        weights=RankingWeights.from_settings(settings),
+    )
+
+
+def get_ranking_service(
+    matches: JobMatchRepositoryDep,
+    jobs: JobRepositoryDep,
+    signals: PreferenceSignalServiceDep,
+    settings: SettingsDep,
+) -> RankingService:
+    return RankingService(
+        matches, jobs=jobs, signals=signals, weights=RankingWeights.from_settings(settings)
+    )
 
 
 RankingServiceDep = Annotated[RankingService, Depends(get_ranking_service)]
@@ -427,8 +467,10 @@ ApplicationRepositoryDep = Annotated[
 ]
 
 
-def get_application_service(applications: ApplicationRepositoryDep) -> ApplicationService:
-    return ApplicationService(applications)
+def get_application_service(
+    applications: ApplicationRepositoryDep, signals: PreferenceSignalServiceDep
+) -> ApplicationService:
+    return ApplicationService(applications, signals=signals)
 
 
 ApplicationServiceDep = Annotated[ApplicationService, Depends(get_application_service)]
@@ -450,7 +492,7 @@ def get_daily_digest_service(
     settings: SettingsDep,
 ) -> DailyDigestService:
     return DailyDigestService(
-        ranking=RankingService(matches),
+        ranking=_build_ranking_service(prisma, matches, settings),
         profiles=ProfileRepository(prisma),
         notifications=notifications,
         providers=build_providers(settings, get_shared_http_client()),
