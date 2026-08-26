@@ -19,7 +19,7 @@ import redis.asyncio as redis
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.models import SearchTrigger
-from app.repositories import ProfileRepository, UserRepository
+from app.repositories import CompanyWatchlistRepository, ProfileRepository, UserRepository
 from app.schemas.search import SearchQuery
 from app.services.candidate_matching_service import CandidateMatchingService
 from app.services.daily_digest_service import DailyDigestService
@@ -44,6 +44,7 @@ class AgentTasks:
         profiles: ProfileRepository,
         redis_client: redis.Redis,
         settings: Settings,
+        watchlists: CompanyWatchlistRepository | None = None,
     ) -> None:
         self._discovery = discovery
         self._analysis = analysis
@@ -53,6 +54,7 @@ class AgentTasks:
         self._profiles = profiles
         self._redis = redis_client
         self._settings = settings
+        self._watchlists = watchlists
 
     async def run_daily_search(self, *, today: date | None = None) -> dict[str, Any]:
         run_date = (today or datetime.now(UTC).date()).isoformat()
@@ -87,6 +89,10 @@ class AgentTasks:
                 continue
             roles.extend(profile.targetRoles)
             locations.extend(profile.preferredLocations)
+        if self._watchlists is not None:
+            # Phase 13: watched boards are keyword-filtered by the connector, so
+            # the roles users want at those companies must be in the query.
+            roles.extend(await self._watchlists.list_all_preferred_roles())
         return SearchQuery(
             targetRoles=list(dict.fromkeys(roles))[:20],
             locations=list(dict.fromkeys(locations))[:20],

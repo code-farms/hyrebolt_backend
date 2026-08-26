@@ -18,6 +18,8 @@ class ComponentScoresOut(BaseModel):
     workMode: float | None
     industry: float | None
     company: float | None
+    # Phase 13: null when the company is not on the viewer's watchlist.
+    watchlist: float | None = None
 
 
 class MatchOut(BaseModel):
@@ -79,6 +81,7 @@ def match_out(match: JobMatch) -> MatchOut:
             workMode=match.workModeScore,
             industry=match.industryScore,
             company=match.companyScore,
+            watchlist=getattr(match, "watchlistScore", None),
         ),
         recommendation=match.recommendation,
         whyMatch=match.whyMatch,

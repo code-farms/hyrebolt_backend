@@ -7,6 +7,7 @@ from typing import Any
 
 from app.models import SearchRunStatus, SearchTrigger
 from app.sources import (
+    CompanyMetadata,
     JobSourceConfig,
     NormalizedJob,
     RawJob,
@@ -34,10 +35,12 @@ def make_normalized_job(
     experience_min: float | None = None,
     experience_max: float | None = None,
     posted_at: datetime | None = None,
+    company_metadata: CompanyMetadata | None = None,
 ) -> NormalizedJob:
     normalized_title = normalize_title(title)
     normalized_location = normalize_location(location)
     return NormalizedJob(
+        company=company_metadata,
         sourceName=source_name,
         externalId=external_id,
         sourceUrl=canonical_url,
@@ -228,13 +231,24 @@ class FakeCompanyRow:
     id: str
     name: str
     normalizedName: str
+    website: str | None = None
+    careersUrl: str | None = None
+    industry: str | None = None
+    stage: str | None = None
+    location: str | None = None
+    description: str | None = None
+    logoUrl: str | None = None
+    metadataSource: str | None = None
+    createdAt: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class FakeCompanyRepository:
     def __init__(self) -> None:
         self.companies: dict[str, FakeCompanyRow] = {}
 
-    async def upsert_by_normalized_name(self, name: str) -> FakeCompanyRow:
+    async def upsert_by_normalized_name(
+        self, name: str, metadata: CompanyMetadata | None = None
+    ) -> FakeCompanyRow:
         from app.utils.normalization import normalize_company
 
         normalized = normalize_company(name)
@@ -242,7 +256,12 @@ class FakeCompanyRepository:
             self.companies[normalized] = FakeCompanyRow(
                 id=uuid.uuid4().hex, name=name.strip(), normalizedName=normalized
             )
-        return self.companies[normalized]
+        row = self.companies[normalized]
+        if metadata is not None:
+            for key, value in metadata.model_dump(exclude_none=True).items():
+                if getattr(row, key) is None:
+                    setattr(row, key, value)
+        return row
 
 
 @dataclass

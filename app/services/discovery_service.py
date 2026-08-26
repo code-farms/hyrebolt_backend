@@ -25,11 +25,15 @@ from app.sources import (
     SourceSearchParams,
     merge_config,
 )
+from app.sources.boards import merge_boards
 from app.sources.throttle import make_source_throttle
 
 logger = get_logger(__name__)
 
 Sleep = Callable[[float], Awaitable[None]]
+BoardProvider = Callable[[], Awaitable[list[dict[str, str]]]]
+
+CAREERS_SOURCE = "company_careers"
 
 
 @dataclass
@@ -101,6 +105,7 @@ class DiscoveryService:
         redis_client: redis.Redis,
         settings: Settings,
         sleep: Sleep = asyncio.sleep,
+        board_provider: BoardProvider | None = None,
     ) -> None:
         self._registry = registry
         self._job_sources = job_sources
@@ -110,6 +115,7 @@ class DiscoveryService:
         self._redis = redis_client
         self._settings = settings
         self._sleep = sleep
+        self._board_provider = board_provider
 
     async def run_search(
         self,
@@ -245,7 +251,25 @@ class DiscoveryService:
             elif requested is not None:
                 rejected[name] = "disabled"
             # not requested + disabled -> simply not attempted
+        if CAREERS_SOURCE in runnable and self._board_provider is not None:
+            runnable[CAREERS_SOURCE] = await self._with_watchlist_boards(runnable[CAREERS_SOURCE])
         return runnable, rejected
+
+    async def _with_watchlist_boards(self, config: JobSourceConfig) -> JobSourceConfig:
+        """Phase 13: boards derived from watchlisted companies' careers URLs
+        join the operator-configured ones. A failing lookup is logged, never
+        fatal — the watchlist must not be able to sink a search run."""
+        assert self._board_provider is not None
+        try:
+            extra = await self._board_provider()
+        except Exception as exc:  # noqa: BLE001 - discovery must survive a watchlist lookup failure
+            logger.warning("watchlist_boards_failed", error=str(exc))
+            return config
+        if not extra:
+            return config
+        boards = merge_boards(list(config.extra.get("boards", [])), extra)
+        logger.info("watchlist_boards_merged", total=len(boards), from_watchlist=len(extra))
+        return config.model_copy(update={"extra": {**config.extra, "boards": boards}})
 
     async def _fetch_source(
         self,

@@ -15,6 +15,8 @@ class JobMatchSummaryOut(BaseModel):
     overallScore: float
     recommendation: MatchRecommendation | None
     feedback: MatchFeedback | None
+    # Phase 13 "Watchlist Match": null unless the company is watchlisted.
+    watchlistScore: float | None = None
 
 
 class JobSourceListingOut(BaseModel):
@@ -29,6 +31,7 @@ class JobOut(BaseModel):
     id: str
     title: str
     companyName: str
+    companyId: str | None = None  # Phase 13: link to /companies/{id} when resolved
     location: str | None
     country: str | None
     remote: bool
@@ -74,6 +77,7 @@ def job_out(job: Job) -> JobOut:
             overallScore=viewer_matches[0].overallScore,
             recommendation=viewer_matches[0].recommendation,
             feedback=viewer_matches[0].feedback,
+            watchlistScore=getattr(viewer_matches[0], "watchlistScore", None),
         )
         if viewer_matches
         else None
@@ -82,6 +86,7 @@ def job_out(job: Job) -> JobOut:
         id=job.id,
         title=job.title,
         companyName=job.companyName,
+        companyId=getattr(job, "companyId", None),
         location=job.location,
         country=job.country,
         remote=job.remote,

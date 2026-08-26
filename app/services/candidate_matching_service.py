@@ -1,9 +1,11 @@
+from collections.abc import Sequence
 from typing import Any
 
 from app.core.logging import get_logger
-from app.db.generated.models import Job, JobMatch, User
+from app.db.generated.models import CompanyWatchlist, Job, JobMatch, User
 from app.models import MatchFeedback, MatchRecommendation
 from app.repositories import (
+    CompanyWatchlistRepository,
     JobAnalysisRepository,
     JobMatchRepository,
     JobRepository,
@@ -11,7 +13,8 @@ from app.repositories import (
 )
 from app.schemas.analysis import JobAnalysisResult
 from app.services.ai_matcher import MATCH_PROMPT_VERSION, AIMatcher
-from app.services.rule_based_matcher import SCORING_VERSION, RuleBasedMatcher
+from app.services.rule_based_matcher import SCORING_VERSION, RuleBasedMatcher, WatchlistEntry
+from app.utils.normalization import normalize_company
 
 logger = get_logger(__name__)
 
@@ -30,6 +33,28 @@ def recommendation_from_score(overall: float) -> MatchRecommendation:
     return MatchRecommendation.IGNORE
 
 
+def to_watchlist_entries(rows: Sequence[CompanyWatchlist]) -> tuple[WatchlistEntry, ...]:
+    entries: list[WatchlistEntry] = []
+    for row in rows:
+        company = getattr(row, "company", None)
+        normalized = (
+            company.normalizedName
+            if company is not None and getattr(company, "normalizedName", None)
+            else normalize_company(getattr(company, "name", "") or "")
+        )
+        priority = getattr(row.priority, "value", row.priority)
+        entries.append(
+            WatchlistEntry(
+                companyId=row.companyId,
+                normalizedName=normalized,
+                priority=str(priority),
+                preferredRoles=tuple(row.preferredRoles or []),
+                excludedRoles=tuple(row.excludedRoles or []),
+            )
+        )
+    return tuple(entries)
+
+
 class CandidateMatchingService:
     def __init__(
         self,
@@ -39,6 +64,7 @@ class CandidateMatchingService:
         profiles: ProfileRepository,
         analyses: JobAnalysisRepository,
         jobs: JobRepository,
+        watchlists: CompanyWatchlistRepository | None = None,
     ) -> None:
         self._matcher = matcher
         self._ai_matcher = ai_matcher
@@ -46,8 +72,16 @@ class CandidateMatchingService:
         self._profiles = profiles
         self._analyses = analyses
         self._jobs = jobs
+        self._watchlists = watchlists
 
-    async def match_job(self, user: User, job: Job, *, force: bool = False) -> JobMatch:
+    async def match_job(
+        self,
+        user: User,
+        job: Job,
+        *,
+        force: bool = False,
+        watchlist: Sequence[WatchlistEntry] | None = None,
+    ) -> JobMatch:
         if not force:
             cached = await self._matches.get_by_user_job(user.id, job.id)
             if (
@@ -61,8 +95,10 @@ class CandidateMatchingService:
         if profile is None:
             profile = await self._profiles.upsert_for_user(user.id, {})
 
+        if watchlist is None:
+            watchlist = await self._load_watchlist(user.id)
         analysis = await self._load_analysis(job)
-        overall, components = self._matcher.score(profile, job, analysis)
+        overall, components = self._matcher.score(profile, job, analysis, watchlist)
 
         data: dict[str, Any] = {
             "overallScore": overall,
@@ -74,6 +110,7 @@ class CandidateMatchingService:
             "workModeScore": components.workMode,
             "industryScore": components.industry,
             "companyScore": components.company,
+            "watchlistScore": components.watchlist,
             "scoringVersion": SCORING_VERSION,
             "recommendation": recommendation_from_score(overall),
             "whyMatch": None,
@@ -117,17 +154,34 @@ class CandidateMatchingService:
         job_ids = await self._matches.find_unmatched_job_ids(
             user.id, SCORING_VERSION, limit=limit
         )
+        watchlist = await self._load_watchlist(user.id)
         matched = 0
         for job_id in job_ids:
             job = await self._jobs.get_by_id(job_id)
             if job is None:
                 continue
             try:
-                await self.match_job(user, job)
+                await self.match_job(user, job, watchlist=watchlist)
                 matched += 1
             except Exception as exc:  # noqa: BLE001 - batch must survive one bad job
                 logger.warning("job_match_failed", job_id=job_id, error=str(exc))
         return matched
+
+    async def rescore_company(self, user: User, company_id: str, *, limit: int) -> int:
+        """Phase 13: a watchlist change re-scores this user's matches for the
+        company right away (bounded); the nightly batch covers the rest."""
+        jobs = await self._jobs.find_candidates_by_company(company_id, limit=limit)
+        watchlist = await self._load_watchlist(user.id)
+        rescored = 0
+        for job in jobs:
+            if job.deletedAt is not None:
+                continue
+            try:
+                await self.match_job(user, job, force=True, watchlist=watchlist)
+                rescored += 1
+            except Exception as exc:  # noqa: BLE001 - one bad job must not abort the rest
+                logger.warning("job_rescore_failed", job_id=job.id, error=str(exc))
+        return rescored
 
     async def record_feedback(
         self, user: User, job: Job, feedback: MatchFeedback
@@ -136,6 +190,11 @@ class CandidateMatchingService:
         if match is None:
             match = await self.match_job(user, job)
         return await self._matches.set_feedback(match.id, feedback)
+
+    async def _load_watchlist(self, user_id: str) -> tuple[WatchlistEntry, ...]:
+        if self._watchlists is None:
+            return ()
+        return to_watchlist_entries(await self._watchlists.list_for_user(user_id))
 
     async def _load_analysis(self, job: Job) -> JobAnalysisResult | None:
         row = getattr(job, "analysis", None)

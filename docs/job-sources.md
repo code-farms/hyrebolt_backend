@@ -26,7 +26,7 @@ never fabricated.
 | --- | --- | --- | --- | --- | --- |
 | Remote OK (`remoteok`) | Official public JSON API: `GET https://remoteok.com/api` | None | 10/min | **Implemented** | API terms require crediting Remote OK and linking back to the job URL (we store `sourceUrl` for this). Remote-only jobs; salary figures are USD/year. Single feed — filtering is client-side. |
 | We Work Remotely (`weworkremotely`) | Public category RSS feeds (default: `remote-programming-jobs.rss`; more via `extra.feeds`) | None | 10/min | **Implemented** | Item titles are `Company: Role`; region granularity is coarse. Remote-only. |
-| Company career pages (`company_careers`) | Greenhouse public board API (`boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true`) and Lever public postings API (`api.lever.co/v0/postings/{token}?mode=json`) | None | 30/min | **Implemented** | Watched boards are configuration (`extra.boards: [{company, provider, token}]`, empty by default). One failing board is skipped; errors only if all fail. Many YC/startup companies are reachable this way. |
+| Company career pages (`company_careers`) | Greenhouse public board API (`boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true`) and Lever public postings API (`api.lever.co/v0/postings/{token}?mode=json`) | None | 30/min | **Implemented** | Boards come from configuration (`extra.boards: [{company, provider, token}]`, empty by default) **plus** every watchlisted company whose `careersUrl` is a recognised Greenhouse/Lever board (Phase 13, merged at search time by `DiscoveryService`). One failing board is skipped; errors only if all fail. Emits `Company.careersUrl` / `metadataSource="company_careers"` — the only startup metadata a board legitimately tells us. Many YC/startup companies are reachable this way. |
 | LinkedIn (`linkedin`) | — | Partner-only | — | **Disabled** | Job APIs are gated behind the Talent Solutions partner program; the User Agreement prohibits scraping. TODO: revisit only with partner access. |
 | Naukri (`naukri`) | — | Recruiter products only | — | **Disabled** | No public API; terms prohibit automated crawling. |
 | Indeed (`indeed`) | — | Partner-only | — | **Disabled** | The public Publisher API was retired; remaining APIs are partner/ATS-gated. |
@@ -47,6 +47,22 @@ never fabricated.
   needed.
 - `rateLimitPerMinute` is carried in config now; enforcement plugs into the
   `SourceHTTPClient.throttle` hook when the discovery engine lands (Phase 5).
+
+## Startup metadata (Phase 13)
+
+`NormalizedJob.company` (`CompanyMetadata`: website, careersUrl, industry,
+stage, location, description, logoUrl, metadataSource) is optional and every
+field is nullable. Persistence (`CompanyRepository.upsert_by_normalized_name`)
+only fills `Company` columns that are still null — a later source never
+overwrites what an earlier source or the user recorded, and nothing is ever
+inferred. Users may edit metadata for companies on their watchlist
+(`PATCH /api/v1/companies/{id}`, stamped `metadataSource="user"`).
+
+YC / Work at a Startup, Wellfound and Cutshort would be the natural metadata
+sources but remain **disabled** (login-gated / partner-only, see the table):
+startups on those platforms are reached through their own Greenhouse/Lever
+boards via `company_careers` instead — add the company to your watchlist with
+its careers URL and the daily search picks the board up automatically.
 
 ## Adding a connector
 

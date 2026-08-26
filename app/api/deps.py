@@ -18,6 +18,7 @@ from app.notifications import build_providers
 from app.repositories import (
     ApplicationRepository,
     CompanyRepository,
+    CompanyWatchlistRepository,
     JobAnalysisRepository,
     JobMatchRepository,
     JobRepository,
@@ -35,6 +36,7 @@ from app.services.ai_matcher import AIMatcher
 from app.services.application_service import ApplicationService
 from app.services.auth_service import AuthService
 from app.services.candidate_matching_service import CandidateMatchingService
+from app.services.company_service import CompanyService
 from app.services.daily_digest_service import DailyDigestService
 from app.services.deduplication_service import DeduplicationService
 from app.services.discovery_service import DiscoveryService
@@ -45,6 +47,7 @@ from app.services.normalization_service import NormalizationService
 from app.services.profile_service import ProfileService
 from app.services.ranking_service import RankingService
 from app.services.rule_based_matcher import RuleBasedMatcher
+from app.services.watchlist_boards import WatchlistBoardsProvider
 from app.sources import SourceRegistry
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -170,6 +173,7 @@ def get_discovery_service(
         ),
         redis_client=redis_client,
         settings=settings,
+        board_provider=WatchlistBoardsProvider(CompanyRepository(prisma)),
     )
 
 
@@ -225,12 +229,50 @@ def get_matching_service(
         profiles=ProfileRepository(prisma),
         analyses=JobAnalysisRepository(prisma),
         jobs=JobRepository(prisma),
+        watchlists=CompanyWatchlistRepository(prisma),
     )
 
 
 CandidateMatchingServiceDep = Annotated[
     CandidateMatchingService, Depends(get_matching_service)
 ]
+
+
+def get_company_repository(prisma: PrismaDep) -> CompanyRepository:
+    return CompanyRepository(prisma)
+
+
+CompanyRepositoryDep = Annotated[CompanyRepository, Depends(get_company_repository)]
+
+
+def get_company_watchlist_repository(prisma: PrismaDep) -> CompanyWatchlistRepository:
+    return CompanyWatchlistRepository(prisma)
+
+
+CompanyWatchlistRepositoryDep = Annotated[
+    CompanyWatchlistRepository, Depends(get_company_watchlist_repository)
+]
+
+
+def get_company_service(
+    companies: CompanyRepositoryDep,
+    watchlists: CompanyWatchlistRepositoryDep,
+    jobs: JobRepositoryDep,
+    matches: JobMatchRepositoryDep,
+    matching: CandidateMatchingServiceDep,
+    settings: SettingsDep,
+) -> CompanyService:
+    return CompanyService(
+        companies=companies,
+        watchlists=watchlists,
+        jobs=jobs,
+        matches=matches,
+        matching=matching,
+        settings=settings,
+    )
+
+
+CompanyServiceDep = Annotated[CompanyService, Depends(get_company_service)]
 
 
 def get_ranking_service(matches: JobMatchRepositoryDep) -> RankingService:

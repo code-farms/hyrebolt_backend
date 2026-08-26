@@ -4,6 +4,7 @@ stay persistence-agnostic. Inject via the factories in ``app.api.deps``."""
 from app.repositories.application_repository import ApplicationRepository
 from app.repositories.base import BaseRepository
 from app.repositories.company_repository import CompanyRepository
+from app.repositories.company_watchlist_repository import CompanyWatchlistRepository
 from app.repositories.job_analysis_repository import JobAnalysisRepository
 from app.repositories.job_match_repository import JobMatchRepository
 from app.repositories.job_repository import JobRepository
@@ -20,6 +21,7 @@ __all__ = [
     "ApplicationRepository",
     "BaseRepository",
     "CompanyRepository",
+    "CompanyWatchlistRepository",
     "JobAnalysisRepository",
     "JobMatchRepository",
     "JobRepository",

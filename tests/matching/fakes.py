@@ -57,6 +57,7 @@ def make_match_job(
     salary_max: int | None = None,
     salary_currency: str | None = None,
     analysis: SimpleNamespace | None = None,
+    company_id: str | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(UTC)
     return SimpleNamespace(
@@ -64,6 +65,7 @@ def make_match_job(
         title=title,
         normalizedTitle=normalize_title(title),
         companyName=company,
+        companyId=company_id,
         location=location,
         normalizedLocation=normalize_location(location),
         description=description,
@@ -94,6 +96,7 @@ class FakeMatchRow:
     workModeScore: float | None = None
     industryScore: float | None = None
     companyScore: float | None = None
+    watchlistScore: float | None = None
     recommendation: Any = None
     whyMatch: str | None = None
     missingSkills: list[str] = field(default_factory=list)
@@ -188,3 +191,46 @@ class FakeJobLookup:
 
     async def get_by_id(self, job_id: str):
         return self.jobs_by_id.get(job_id)
+
+    async def find_candidates_by_company(self, company_id: str, *, limit: int):
+        rows = [
+            job
+            for job in self.jobs_by_id.values()
+            if getattr(job, "companyId", None) == company_id
+        ]
+        return rows[:limit]
+
+
+class FakeWatchlistRepoForMatching:
+    """Rows shaped like prisma CompanyWatchlist with the company included."""
+
+    def __init__(self, rows: list[Any] | None = None) -> None:
+        self.rows = rows or []
+
+    async def list_for_user(self, user_id: str) -> list[Any]:
+        return [row for row in self.rows if row.userId == user_id]
+
+
+def make_watchlist_row(
+    *,
+    user_id: str = "u1",
+    company_id: str = "c1",
+    company_name: str = "Acme",
+    priority: str = "HIGH",
+    preferred_roles: list[str] | None = None,
+    excluded_roles: list[str] | None = None,
+) -> SimpleNamespace:
+    from app.utils.normalization import normalize_company
+
+    return SimpleNamespace(
+        id=uuid.uuid4().hex,
+        userId=user_id,
+        companyId=company_id,
+        priority=priority,
+        preferredRoles=preferred_roles or [],
+        excludedRoles=excluded_roles or [],
+        notes=None,
+        company=SimpleNamespace(
+            id=company_id, name=company_name, normalizedName=normalize_company(company_name)
+        ),
+    )

@@ -89,7 +89,7 @@ DEFAULT_CONFIGS: dict[str, JobSourceConfig] = {
         displayName="Company career pages",
         enabled=True,
         rateLimitPerMinute=30,
-        capabilities=(_C.API, _C.SEARCH, _C.SCRAPE_PERMITTED_PAGES),
+        capabilities=(_C.API, _C.SEARCH, _C.SCRAPE_PERMITTED_PAGES, _C.STARTUP_METADATA),
         extra={"boards": []},
     ),
 }

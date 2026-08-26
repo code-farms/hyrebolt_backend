@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     match_weight_work_mode: float = 0.05
     match_weight_industry: float = 0.05
     match_weight_company: float = 0.05
+    match_weight_watchlist: float = 0.10  # Phase 13 watchlist component
     match_batch_limit: int = 50
 
     # AI (Phase 7). Default "mock": no API key needed in dev/tests.

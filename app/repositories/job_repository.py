@@ -162,6 +162,40 @@ class JobRepository(BaseRepository):
         total = await self._prisma.jobmatch.count(where=where)  # type: ignore[arg-type]
         return rows, total
 
+    async def list_by_companies(
+        self, user_id: str, company_ids: list[str], *, limit: int, offset: int
+    ) -> tuple[list[Job], int]:
+        """Open positions at the given companies (Phase 13), newest first, with
+        the viewer's match + saved context."""
+        if not company_ids:
+            return [], 0
+        where: dict[str, Any] = {"deletedAt": None, "companyId": {"in": company_ids}}
+        rows = await self._prisma.job.find_many(
+            where=where,  # type: ignore[arg-type]
+            order={"createdAt": "desc"},
+            take=limit,
+            skip=offset,
+            include=_viewer_include(user_id),  # type: ignore[arg-type]
+        )
+        total = await self._prisma.job.count(where=where)  # type: ignore[arg-type]
+        return rows, total
+
+    async def count_open_by_company(self, company_ids: list[str]) -> dict[str, int]:
+        if not company_ids:
+            return {}
+        groups = await self._prisma.job.group_by(
+            by=["companyId"],
+            where={"deletedAt": None, "companyId": {"in": company_ids}},  # type: ignore[arg-type]
+            count=True,
+        )
+        counts = {company_id: 0 for company_id in company_ids}
+        for group in groups:
+            company_id = group.get("companyId")
+            count = group.get("_count")
+            if company_id in counts and isinstance(count, dict):
+                counts[company_id] = int(count.get("_all", 0))
+        return counts
+
     async def list_active_with_listings(
         self, *, limit: int, offset: int
     ) -> tuple[list[Job], int]:

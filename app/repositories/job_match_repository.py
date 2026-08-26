@@ -62,6 +62,28 @@ class JobMatchRepository(BaseRepository):
         total = await self._prisma.jobmatch.count(where=where)
         return rows, total
 
+    async def mark_stale_for_company(
+        self, user_id: str, company_id: str, company_name: str
+    ) -> int:
+        """Phase 13: a watchlist change invalidates this user's matches for the
+        company; the stale version makes find_unmatched_job_ids re-score them.
+        The name branch catches legacy jobs whose companyId is null."""
+        result = await self._prisma.jobmatch.update_many(
+            where={
+                "userId": user_id,
+                "job": {
+                    "is": {
+                        "OR": [
+                            {"companyId": company_id},
+                            {"companyName": {"equals": company_name, "mode": "insensitive"}},
+                        ]
+                    }
+                },
+            },  # type: ignore[arg-type]
+            data={"scoringVersion": "stale"},
+        )
+        return int(result)
+
     async def count_in_score_band(
         self, user_id: str, *, min_score: float, max_score: float | None = None
     ) -> int:

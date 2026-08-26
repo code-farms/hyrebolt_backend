@@ -4,6 +4,7 @@ The rule scores are the system of record for ranking; the AI layer only adds
 explanations. Every component is 0–100. Unknown data scores a neutral 50 —
 never a fabricated penalty or boost."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.core.config import Settings
@@ -15,9 +16,29 @@ from app.utils.normalization import normalize_company, normalize_location, norma
 
 # Bump when the scoring rules change: stored matches from older versions are
 # treated as stale and re-scored.
-SCORING_VERSION = "rules-v1"
+SCORING_VERSION = "rules-v2"
 
 NEUTRAL = 50.0
+
+# Phase 13 watchlist component: base score by priority. A preferred-role hit
+# adds 10, a listed-but-unmatched preferred role subtracts 15, an excluded role
+# zeroes the component.
+WATCHLIST_BASE: dict[str, float] = {"HIGH": 90.0, "MEDIUM": 75.0, "LOW": 60.0}
+WATCHLIST_PREFERRED_BONUS = 10.0
+WATCHLIST_UNPREFERRED_PENALTY = 15.0
+ROLE_MATCH_THRESHOLD = 0.6
+
+
+@dataclass(frozen=True)
+class WatchlistEntry:
+    """Prisma-free view of a CompanyWatchlist row, so the matcher (and its
+    tests) never depend on generated models."""
+
+    companyId: str
+    normalizedName: str
+    priority: str  # "HIGH" | "MEDIUM" | "LOW" — Prisma enums arrive as str
+    preferredRoles: tuple[str, ...] = ()
+    excludedRoles: tuple[str, ...] = ()
 
 
 @dataclass
@@ -30,6 +51,9 @@ class ComponentScores:
     workMode: float
     industry: float
     company: float
+    # None when the company is not on the user's watchlist: "no signal", so the
+    # weighted mean treats it as NEUTRAL and the UI can hide the badge.
+    watchlist: float | None = None
 
 
 class RuleBasedMatcher:
@@ -42,6 +66,7 @@ class RuleBasedMatcher:
         profile: UserProfile,
         job: Job,
         analysis: JobAnalysisResult | None,
+        watchlist: Sequence[WatchlistEntry] = (),
     ) -> tuple[float, ComponentScores]:
         components = ComponentScores(
             role=self._role_score(profile, job, analysis),
@@ -52,8 +77,10 @@ class RuleBasedMatcher:
             workMode=self._work_mode_score(profile, job, analysis),
             industry=self._industry_score(profile, analysis),
             company=self._company_score(profile, job),
+            watchlist=self._watchlist_score(job, analysis, watchlist),
         )
         s = self._settings
+        watchlist_value = components.watchlist if components.watchlist is not None else NEUTRAL
         overall = (
             s.match_weight_role * components.role
             + s.match_weight_skills * components.skill
@@ -63,6 +90,7 @@ class RuleBasedMatcher:
             + s.match_weight_work_mode * components.workMode
             + s.match_weight_industry * components.industry
             + s.match_weight_company * components.company
+            + s.match_weight_watchlist * watchlist_value
         )
         total_weight = (
             s.match_weight_role
@@ -73,6 +101,7 @@ class RuleBasedMatcher:
             + s.match_weight_work_mode
             + s.match_weight_industry
             + s.match_weight_company
+            + s.match_weight_watchlist
         )
         return round(overall / total_weight, 1) if total_weight else 0.0, components
 
@@ -221,3 +250,58 @@ class RuleBasedMatcher:
         if any(p and p == company for p in preferred):
             return 100.0
         return NEUTRAL
+
+    def _watchlist_score(
+        self,
+        job: Job,
+        analysis: JobAnalysisResult | None,
+        watchlist: Sequence[WatchlistEntry],
+    ) -> float | None:
+        entry = self._watchlist_entry_for(job, watchlist)
+        if entry is None:
+            return None
+        if self._title_matches(job, analysis, entry.excludedRoles):
+            return 0.0
+        base = WATCHLIST_BASE.get(str(entry.priority), WATCHLIST_BASE["MEDIUM"])
+        if not entry.preferredRoles:
+            return base
+        if self._title_matches(job, analysis, entry.preferredRoles):
+            return min(100.0, base + WATCHLIST_PREFERRED_BONUS)
+        return base - WATCHLIST_UNPREFERRED_PENALTY
+
+    @staticmethod
+    def _watchlist_entry_for(
+        job: Job, watchlist: Sequence[WatchlistEntry]
+    ) -> WatchlistEntry | None:
+        if not watchlist:
+            return None
+        company_id = getattr(job, "companyId", None)
+        if company_id is not None:
+            for entry in watchlist:
+                if entry.companyId == company_id:
+                    return entry
+        # Legacy jobs whose company resolution failed have no companyId.
+        company = normalize_company(job.companyName)
+        for entry in watchlist:
+            if company and entry.normalizedName == company:
+                return entry
+        return None
+
+    def _title_matches(
+        self, job: Job, analysis: JobAnalysisResult | None, roles: Sequence[str]
+    ) -> bool:
+        if not roles:
+            return False
+        titles = [job.normalizedTitle]
+        if analysis is not None and analysis.title:
+            titles.append(normalize_title(analysis.title))
+        for role in roles:
+            wanted = normalize_title(role)
+            if not wanted:
+                continue
+            for title in titles:
+                if wanted in title or title in wanted:
+                    return True
+                if self._identity.title_similarity(wanted, title) >= ROLE_MATCH_THRESHOLD:
+                    return True
+        return False

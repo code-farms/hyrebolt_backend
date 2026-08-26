@@ -10,6 +10,7 @@ from app.db.client import prisma_client
 from app.notifications import build_providers
 from app.repositories import (
     CompanyRepository,
+    CompanyWatchlistRepository,
     JobAnalysisRepository,
     JobMatchRepository,
     JobRepository,
@@ -30,6 +31,7 @@ from app.services.job_analysis_service import JobAnalysisService
 from app.services.normalization_service import NormalizationService
 from app.services.ranking_service import RankingService
 from app.services.rule_based_matcher import RuleBasedMatcher
+from app.services.watchlist_boards import WatchlistBoardsProvider
 from app.sources import SourceRegistry
 from app.worker.tasks import AgentTasks
 
@@ -51,6 +53,7 @@ def build_agent_tasks(settings: Settings) -> AgentTasks:
     redis_client = get_redis_client(settings)
     provider = _build_llm_provider(settings)
     matches = JobMatchRepository(prisma)
+    watchlists = CompanyWatchlistRepository(prisma)
 
     discovery = DiscoveryService(
         registry=SourceRegistry(get_shared_http_client()),
@@ -67,6 +70,7 @@ def build_agent_tasks(settings: Settings) -> AgentTasks:
         ),
         redis_client=redis_client,
         settings=settings,
+        board_provider=WatchlistBoardsProvider(CompanyRepository(prisma)),
     )
     analysis = JobAnalysisService(
         provider=provider,
@@ -81,6 +85,7 @@ def build_agent_tasks(settings: Settings) -> AgentTasks:
         profiles=ProfileRepository(prisma),
         analyses=JobAnalysisRepository(prisma),
         jobs=JobRepository(prisma),
+        watchlists=watchlists,
     )
     digest = DailyDigestService(
         ranking=RankingService(matches),
@@ -97,4 +102,5 @@ def build_agent_tasks(settings: Settings) -> AgentTasks:
         profiles=ProfileRepository(prisma),
         redis_client=redis_client,
         settings=settings,
+        watchlists=watchlists,
     )

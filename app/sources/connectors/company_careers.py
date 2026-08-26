@@ -16,8 +16,9 @@ from typing import Any
 
 from app.core.logging import get_logger
 from app.sources.base import JobSourceConnector
+from app.sources.boards import public_board_url
 from app.sources.exceptions import SourceError, SourceParseError, SourceUnavailableError
-from app.sources.models import NormalizedJob, RawJob, SourceSearchParams
+from app.sources.models import CompanyMetadata, NormalizedJob, RawJob, SourceSearchParams
 from app.utils.normalization import (
     canonicalize_url,
     compute_content_hash,
@@ -95,12 +96,31 @@ class CompanyCareersConnector(JobSourceConnector):
                 sourceName=self.get_source_name(),
                 externalId=f"{provider}:{token}:{job.get('id')}",
                 url=job.get("absolute_url") or job.get("hostedUrl"),
-                payload={"provider": provider, "company": company, "job": job},
+                payload={
+                    "provider": provider,
+                    "company": company,
+                    "token": token,
+                    "website": board.get("website"),
+                    "job": job,
+                },
                 fetchedAt=fetched_at,
             )
             for job in jobs
             if isinstance(job, dict)
         ]
+
+    def _company_metadata(self, raw: RawJob) -> CompanyMetadata:
+        """Phase 13: the only startup metadata a board legitimately tells us is
+        its own public URL (plus an operator-supplied website). Nothing else
+        is inferred."""
+        provider = str(raw.payload.get("provider") or "")
+        token = raw.payload.get("token")
+        website = raw.payload.get("website")
+        return CompanyMetadata(
+            careersUrl=public_board_url(provider, str(token)) if token else None,
+            website=str(website) if website else None,
+            metadataSource=self.get_source_name(),
+        )
 
     def _matches(self, payload: dict[str, Any], params: SourceSearchParams) -> bool:
         if not params.keywords:
@@ -144,6 +164,7 @@ class CompanyCareersConnector(JobSourceConnector):
                 normalized_location=normalized_location,
                 description=description,
             ),
+            company=self._company_metadata(raw),
         )
 
     def _normalize_lever(self, raw: RawJob) -> NormalizedJob:
@@ -188,6 +209,7 @@ class CompanyCareersConnector(JobSourceConnector):
                 normalized_location=normalized_location,
                 description=description,
             ),
+            company=self._company_metadata(raw),
         )
 
 

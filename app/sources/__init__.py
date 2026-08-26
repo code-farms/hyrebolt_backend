@@ -13,6 +13,7 @@ from app.sources.exceptions import (
     SourceUnavailableError,
 )
 from app.sources.models import (
+    CompanyMetadata,
     JobSourceConfig,
     NormalizedJob,
     RawJob,
@@ -24,6 +25,7 @@ from app.sources.registry import DEFAULT_CONFIGS, SourceRegistry, merge_config
 
 __all__ = [
     "DEFAULT_CONFIGS",
+    "CompanyMetadata",
     "JobSourceConfig",
     "JobSourceConnector",
     "NormalizedJob",

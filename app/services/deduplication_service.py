@@ -76,6 +76,10 @@ class DeduplicationService:
                 "job_listing_missing_url", source=job.sourceName, external_id=job.externalId
             )
 
+        # Resolve the company first so startup metadata (Phase 13) fills in
+        # even when every job on the board is already known.
+        company = await self._companies.upsert_by_normalized_name(job.companyName, job.company)
+
         # (a) Same source + external id: seen before, refresh the listing.
         if job.externalId is not None:
             listing = await self._listings.find_by_source_external_id(source_id, job.externalId)
@@ -98,7 +102,6 @@ class DeduplicationService:
             return None
 
         # (d) Fuzzy detection against same-company candidates (Phase 6).
-        company = await self._companies.upsert_by_normalized_name(job.companyName)
         candidates = await self._jobs.find_candidates_by_company(
             company.id, limit=self._settings.dedup_max_candidates
         )

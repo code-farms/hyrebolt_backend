@@ -154,6 +154,9 @@ def test_overall_is_weighted_sum_and_deterministic() -> None:
     overall1, c = matcher.score(profile, job, result)  # type: ignore[arg-type]
     overall2, _ = matcher.score(profile, job, result)  # type: ignore[arg-type]
 
+    # Unwatched company: the watchlist component has no signal and counts as
+    # NEUTRAL at its 0.10 weight, so the weights sum to 1.10.
+    assert c.watchlist is None
     expected = (
         0.25 * c.role
         + 0.25 * c.skill
@@ -163,7 +166,8 @@ def test_overall_is_weighted_sum_and_deterministic() -> None:
         + 0.05 * c.workMode
         + 0.05 * c.industry
         + 0.05 * c.company
-    )
+        + 0.10 * NEUTRAL
+    ) / 1.10
     assert overall1 == round(expected, 1)
     assert overall1 == overall2
     assert 0 <= overall1 <= 100
@@ -180,6 +184,7 @@ def test_weights_are_configurable() -> None:
             "match_weight_work_mode": 0.0,
             "match_weight_industry": 0.0,
             "match_weight_company": 0.0,
+            "match_weight_watchlist": 0.0,
         }
     )
     role_only = RuleBasedMatcher(lopsided)

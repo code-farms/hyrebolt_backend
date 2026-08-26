@@ -408,6 +408,7 @@ model JobMatch {
   workModeScore   Float?
   industryScore   Float?
   companyScore    Float?
+  watchlistScore  Float? // Phase 13: null when the company is not on the user's watchlist
 
   recommendation MatchRecommendation?
   whyMatch       String?

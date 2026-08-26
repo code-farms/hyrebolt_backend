@@ -63,6 +63,23 @@ class RawJob(BaseModel):
     fetchedAt: datetime
 
 
+class CompanyMetadata(BaseModel):
+    """Startup/company metadata a connector legitimately knows about the
+    employer (Phase 13). Every field is optional: unknown stays None, and the
+    persistence layer only fills Company columns that are still null."""
+
+    model_config = ConfigDict(frozen=True)
+
+    website: str | None = None
+    careersUrl: str | None = None
+    industry: str | None = None
+    stage: str | None = None
+    location: str | None = None
+    description: str | None = None
+    logoUrl: str | None = None
+    metadataSource: str | None = None  # e.g. "company_careers", "user"
+
+
 class NormalizedJob(BaseModel):
     """Mirror of the creatable Prisma Job fields. Carries sourceName (not the
     DB sourceId): row resolution happens at persistence time. Absent data is
@@ -90,6 +107,7 @@ class NormalizedJob(BaseModel):
     postedAt: datetime | None = None
     rawData: dict[str, Any] | None = None
     contentHash: str
+    company: CompanyMetadata | None = None
 
 
 class SourceHealth(BaseModel):

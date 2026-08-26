@@ -68,7 +68,13 @@ creates Job rows** — jobs only ever come from real discovery.
   near-duplicates below the auto-merge threshold without merging them.
 - **Company resolution can fail**: `Job.companyName` (raw text) is required,
   `Job.companyId` is nullable and set-null on company deletion. `Company`
-  startup metadata (stage, industry, …) is nullable — never fabricated.
+  startup metadata (stage, industry, …) is nullable — never fabricated, and
+  connectors only ever fill columns that are still null (Phase 13);
+  `metadataSource` records where a value came from (`company_careers`, `user`).
+- **`JobMatch.watchlistScore`** (Phase 13) is null unless the job's company is
+  on the user's watchlist; `scoringVersion` is set to `"stale"` for a user's
+  matches at a company whenever their watchlist entry changes, so the nightly
+  `match_jobs` re-scores them.
 - **Search-friendly fields without preview features**: `normalizedTitle` and
   `normalizedLocation` are btree-indexed (including the composite pair used
   by dedup's company+title+location signal). Prisma's full-text search is a
