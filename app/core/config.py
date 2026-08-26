@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     resume_extract_timeout_seconds: float = 20.0
     resume_upload_rate_limit_per_minute: int = 10
 
+    # Application assistant (Phase 15): each generate/regenerate is one request.
+    assistant_rate_limit_per_minute: int = 20
+
     # AI (Phase 7). Default "mock": no API key needed in dev/tests.
     llm_provider: Literal["mock", "openai"] = "mock"
     openai_api_key: str | None = None

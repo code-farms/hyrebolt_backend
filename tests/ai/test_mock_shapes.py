@@ -25,3 +25,17 @@ async def test_mock_shapes_follow_the_task_line() -> None:
         system="You explain matches.\nDo not read the resume gap section.", prompt="Title: X"
     )
     assert "skillsRequired" in other.content
+
+
+async def test_assistant_shape_wins_over_resume_branch() -> None:
+    from app.models import ApplicationDraftKind
+    from app.services import application_assistant_service
+
+    provider = MockLLMProvider()
+    tailoring = application_assistant_service.SYSTEM_PROMPTS[ApplicationDraftKind.RESUME_TAILORING]
+    result = await provider.complete_json(
+        system=tailoring, prompt="JOB\nTitle: SDE II\nCompany: Acme\n"
+    )
+    assert set(result.content) == {"content"}
+    assert "Resume tailoring suggestions for SDE II at Acme" in result.content["content"]
+    assert "Mock" in result.content["content"]  # never passes for a real draft

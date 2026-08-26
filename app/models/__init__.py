@@ -6,6 +6,7 @@ stable location instead of reaching into the generated client.
 """
 
 from app.db.generated.enums import (
+    ApplicationDraftKind,
     ApplicationStatus,
     EmploymentType,
     MatchFeedback,
@@ -21,6 +22,7 @@ from app.db.generated.enums import (
 )
 
 __all__ = [
+    "ApplicationDraftKind",
     "ApplicationStatus",
     "EmploymentType",
     "MatchFeedback",

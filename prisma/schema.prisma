@@ -111,6 +111,14 @@ enum WatchlistPriority {
   LOW
 }
 
+// Phase 15 application assistant sections.
+enum ApplicationDraftKind {
+  COVER_LETTER
+  RECRUITER_MESSAGE
+  RESUME_TAILORING
+  APPLICATION_NOTES
+}
+
 // ─────────────────────────── USER ───────────────────────────
 
 model User {
@@ -130,6 +138,7 @@ model User {
   watchlist     CompanyWatchlist[]
   searchRuns    SearchRun[]
   resumes       Resume[]
+  drafts        ApplicationDraft[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -310,6 +319,7 @@ model Job {
   listings     JobSourceListing[]
   analysis     JobAnalysis?
   resumeGaps   ResumeGapAnalysis[]
+  drafts       ApplicationDraft[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -617,6 +627,7 @@ model ResumeVersion {
 
   analysis    ResumeAnalysis?
   gapAnalyses ResumeGapAnalysis[]
+  drafts      ApplicationDraft[]
 
   createdAt DateTime @default(now())
 
@@ -660,5 +671,36 @@ model ResumeGapAnalysis {
   updatedAt DateTime @updatedAt
 
   @@unique([versionId, jobId])
+  @@index([jobId])
+}
+
+// ─────────────────────────── APPLICATION ASSISTANT (Phase 15) ───────────────────────────
+
+// One editable draft per (user, job, section). `content` is what the user
+// sees and edits; `generatedContent` is the last LLM output so an edit can be
+// reverted. Nothing here is ever submitted anywhere — the user copies it.
+model ApplicationDraft {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  kind   ApplicationDraftKind
+
+  content          String  @db.Text
+  generatedContent String? @db.Text // null for a hand-written draft (model/generatedAt/promptVersion null too)
+
+  resumeVersionId String?
+  resumeVersion   ResumeVersion? @relation(fields: [resumeVersionId], references: [id], onDelete: SetNull)
+
+  promptVersion String? // per section, e.g. "assistant/cover-letter-v1"
+  model         String?
+  generatedAt   DateTime?
+  editedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, jobId, kind])
   @@index([jobId])
 }

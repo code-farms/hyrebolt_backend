@@ -17,6 +17,7 @@ from app.db.generated import Prisma
 from app.db.generated.models import User
 from app.notifications import build_providers
 from app.repositories import (
+    ApplicationDraftRepository,
     ApplicationRepository,
     CompanyRepository,
     CompanyWatchlistRepository,
@@ -37,6 +38,7 @@ from app.repositories import (
 )
 from app.services.agent_status_service import AgentStatusService
 from app.services.ai_matcher import AIMatcher
+from app.services.application_assistant_service import ApplicationAssistantService
 from app.services.application_service import ApplicationService
 from app.services.auth_service import AuthService
 from app.services.candidate_matching_service import CandidateMatchingService
@@ -347,6 +349,40 @@ def get_resume_gap_service(
 
 
 ResumeGapServiceDep = Annotated[ResumeGapService, Depends(get_resume_gap_service)]
+
+
+def get_application_draft_repository(prisma: PrismaDep) -> ApplicationDraftRepository:
+    return ApplicationDraftRepository(prisma)
+
+
+ApplicationDraftRepositoryDep = Annotated[
+    ApplicationDraftRepository, Depends(get_application_draft_repository)
+]
+
+
+def get_application_assistant_service(
+    provider: LLMProviderDep,
+    drafts: ApplicationDraftRepositoryDep,
+    profiles: ProfileRepositoryDep,
+    companies: CompanyRepositoryDep,
+    resumes: ResumeServiceDep,
+    skills: SkillRepositoryDep,
+    settings: SettingsDep,
+) -> ApplicationAssistantService:
+    return ApplicationAssistantService(
+        provider=provider,
+        drafts=drafts,
+        profiles=profiles,
+        companies=companies,
+        resumes=resumes,
+        skills=skills,
+        settings=settings,
+    )
+
+
+ApplicationAssistantServiceDep = Annotated[
+    ApplicationAssistantService, Depends(get_application_assistant_service)
+]
 
 
 def get_ranking_service(matches: JobMatchRepositoryDep) -> RankingService:

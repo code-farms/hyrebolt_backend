@@ -1,6 +1,7 @@
 """Database access layer: all Prisma queries live in repositories so services
 stay persistence-agnostic. Inject via the factories in ``app.api.deps``."""
 
+from app.repositories.application_draft_repository import ApplicationDraftRepository
 from app.repositories.application_repository import ApplicationRepository
 from app.repositories.base import BaseRepository
 from app.repositories.company_repository import CompanyRepository
@@ -21,6 +22,7 @@ from app.repositories.skill_repository import SkillRepository
 from app.repositories.user_repository import UserRepository
 
 __all__ = [
+    "ApplicationDraftRepository",
     "ApplicationRepository",
     "BaseRepository",
     "CompanyRepository",

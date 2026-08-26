@@ -85,6 +85,13 @@ creates Job rows** — jobs only ever come from real discovery.
   `ResumeAnalysis` mirrors `JobAnalysis` (the DB is the cache, `promptVersion`
   invalidates); `ResumeGapAnalysis` caches only the AI portion of a gap
   analysis — matched/missing skills are recomputed on every read.
+- **Application drafts** (Phase 15): `ApplicationDraft` is unique per
+  `(userId, jobId, kind)` — cover letter, recruiter message, resume tailoring,
+  application notes. `content` is what the user edits; `generatedContent` keeps
+  the last LLM output (null for a hand-written draft) alongside `promptVersion`
+  (per section), `model`, `generatedAt` and the `resumeVersionId` it was based
+  on (SetNull when that version is deleted). Nothing in this table is ever
+  submitted anywhere.
 - **Search-friendly fields without preview features**: `normalizedTitle` and
   `normalizedLocation` are btree-indexed (including the composite pair used
   by dedup's company+title+location signal). Prisma's full-text search is a
@@ -112,5 +119,6 @@ User ─1:1─ UserProfile ─1:N─ UserSkill ─N:1─ Skill
   └─1:N─ Resume ─1:N─ ResumeVersion ─1:1─ ResumeAnalysis
                           │         └─1:N─ ResumeGapAnalysis ─N:1─ Job
       UserProfile.selectedResumeId ─N:1─ Resume (SetNull)
+      User ─1:N─ ApplicationDraft ─N:1─ Job (─N:1─ ResumeVersion, SetNull)
       Application ─1:N─ ApplicationEvent
 ```

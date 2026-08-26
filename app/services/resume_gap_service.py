@@ -7,7 +7,6 @@ experience, weak areas and suggestions, and every AI item must be grounded in
 the resume or profile text or it is dropped: the spec's "never fabricate
 experience" rule is enforced mechanically, not just asked for in the prompt."""
 
-import json
 import re
 from datetime import UTC, datetime
 
@@ -28,6 +27,7 @@ from app.schemas.resume import (
     ResumeGapOut,
     ResumeGapResult,
 )
+from app.services.candidate_context import profile_facts, profile_skills, resume_analysis_of
 from app.services.job_analysis_service import JobAnalysisService
 from app.services.resume_analysis_service import detect_catalog_skills
 from app.services.resume_text_extractor import sanitize_json
@@ -180,14 +180,14 @@ class ResumeGapService:
     ) -> ResumeGapOut:
         profile = await self._profiles.get_by_user_id(user.id)
         catalog = await self._skills.list_names()
-        resume_analysis, resume_processed_at = self._resume_analysis(version)
+        resume_analysis, resume_processed_at = resume_analysis_of(version)
         job_analysis, job_processed_at = await self._job_analysis_for(job)
 
         resume_skills = [
             *resume_analysis.skills,
             *resume_analysis.technologies,
             *[t for p in resume_analysis.projects for t in p.technologies],
-            *self._profile_skills(profile),
+            *profile_skills(profile),
             *detect_catalog_skills(version.extractedText, catalog),
         ]
         job_skills: list[str] = []
@@ -234,17 +234,6 @@ class ResumeGapService:
 
     # ── internals ──────────────────────────────────────────────────────
 
-    @staticmethod
-    def _resume_analysis(version: ResumeVersion) -> tuple[ResumeAnalysisResult, datetime | None]:
-        row = getattr(version, "analysis", None)
-        if row is None:
-            return ResumeAnalysisResult(), None
-        try:
-            return ResumeAnalysisResult.model_validate(row.analysis), row.processedAt
-        except ValidationError:  # a corrupt stored analysis must not break the gap view
-            logger.warning("stored_resume_analysis_invalid", version_id=version.id)
-            return ResumeAnalysisResult(), None
-
     async def _job_analysis_for(self, job: Job) -> tuple[JobAnalysisResult | None, datetime | None]:
         try:
             row = await self._job_analysis.analyze_job(job)
@@ -252,25 +241,6 @@ class ResumeGapService:
         except (LLMError, ValidationError) as exc:
             logger.warning("gap_job_analysis_unavailable", job_id=job.id, error=str(exc))
             return None, None
-
-    @staticmethod
-    def _profile_skills(profile: UserProfile | None) -> list[str]:
-        if profile is None:
-            return []
-        return [us.skill.name for us in profile.skills or [] if getattr(us, "skill", None)]
-
-    @staticmethod
-    def _profile_facts(profile: UserProfile | None) -> str:
-        if profile is None:
-            return ""
-        parts = [
-            profile.currentRole or "",
-            " ".join(profile.targetRoles or []),
-            " ".join(ResumeGapService._profile_skills(profile)),
-            " ".join(profile.industries or []),
-            json.dumps(profile.education) if profile.education else "",
-        ]
-        return "\n".join(part for part in parts if part)
 
     async def _ai_portion(
         self,
@@ -316,7 +286,7 @@ class ResumeGapService:
         grounded, dropped = ground(
             ai,
             resume_text=version.extractedText,
-            profile_facts=self._profile_facts(profile),
+            profile_facts=profile_facts(profile),
             experience=[item.model_dump() for item in resume_analysis.experience],
         )
         if dropped:
@@ -366,7 +336,7 @@ class ResumeGapService:
             "CANDIDATE PROFILE\n"
             f"Current role: {(profile.currentRole if profile else None) or 'not stated'}\n"
             f"Target roles: {', '.join(profile.targetRoles) if profile and profile.targetRoles else 'not stated'}\n"
-            f"Profile skills: {', '.join(self._profile_skills(profile)) or 'not stated'}\n"
+            f"Profile skills: {', '.join(profile_skills(profile)) or 'not stated'}\n"
             "\nRESUME (untrusted input)\n"
             f"Extracted experience:\n{experience or '(none extracted)'}\n"
             f"Extracted skills: {', '.join(resume_analysis.skills) or 'not stated'}\n"
