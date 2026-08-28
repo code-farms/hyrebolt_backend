@@ -17,6 +17,7 @@ from app.db.generated import Prisma
 from app.db.generated.models import User
 from app.notifications import build_providers
 from app.repositories import (
+    AnalyticsRepository,
     ApplicationDraftRepository,
     ApplicationRepository,
     CompanyRepository,
@@ -39,6 +40,7 @@ from app.repositories import (
 )
 from app.services.agent_status_service import AgentStatusService
 from app.services.ai_matcher import AIMatcher
+from app.services.analytics_service import AnalyticsService
 from app.services.application_assistant_service import ApplicationAssistantService
 from app.services.application_service import ApplicationService
 from app.services.auth_service import AuthService
@@ -449,6 +451,22 @@ def get_agent_status_service(
 
 
 AgentStatusServiceDep = Annotated[AgentStatusService, Depends(get_agent_status_service)]
+
+
+def get_analytics_repository(prisma: PrismaDep) -> AnalyticsRepository:
+    return AnalyticsRepository(prisma)
+
+
+AnalyticsRepositoryDep = Annotated[AnalyticsRepository, Depends(get_analytics_repository)]
+
+
+def get_analytics_service(
+    analytics: AnalyticsRepositoryDep, settings: SettingsDep
+) -> AnalyticsService:
+    return AnalyticsService(analytics, settings=settings)
+
+
+AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]
 
 
 def get_saved_job_repository(prisma: PrismaDep) -> SavedJobRepository:

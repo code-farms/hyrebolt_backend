@@ -97,6 +97,11 @@ class Settings(BaseSettings):
     ranking_feedback_penalty: float = 15.0
     ranking_role_hide_similarity: float = 0.75
 
+    # Analytics (Phase 17). A job counts as "relevant"/"matched" when the user's
+    # match score reaches this (75 = STRONG_MATCH band); company table row cap.
+    analytics_relevant_min_score: float = 75.0
+    analytics_company_limit: int = 10
+
     # AI (Phase 7). Default "mock": no API key needed in dev/tests.
     llm_provider: Literal["mock", "openai"] = "mock"
     openai_api_key: str | None = None
