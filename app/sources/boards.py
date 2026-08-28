@@ -6,6 +6,7 @@ rendering. Only those hosts derive a board; any other URL is kept as plain
 metadata and never fetched, so nothing here can widen the crawl surface
 beyond what docs/job-sources.md permits."""
 
+import re
 from urllib.parse import parse_qs, urlsplit
 
 GREENHOUSE_PUBLIC_BOARD = "https://boards.greenhouse.io/{token}"
@@ -13,6 +14,9 @@ LEVER_PUBLIC_BOARD = "https://jobs.lever.co/{token}"
 
 _GREENHOUSE_HOSTS = {"boards.greenhouse.io", "job-boards.greenhouse.io"}
 _LEVER_HOSTS = {"jobs.lever.co", "jobs.eu.lever.co"}
+# The token is interpolated into the upstream API path; anything outside a
+# board slug (e.g. "..") must never reach the request URL.
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def public_board_url(provider: str, token: str) -> str | None:
@@ -48,7 +52,7 @@ def board_from_careers_url(company: str, url: str | None) -> dict[str, str] | No
         if segments:
             token = segments[0]
 
-    if provider is None or not token:
+    if provider is None or not token or not _TOKEN_RE.match(token):
         return None
     return {"company": company.strip(), "provider": provider, "token": token}
 

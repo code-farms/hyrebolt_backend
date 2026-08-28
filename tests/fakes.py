@@ -1,6 +1,7 @@
 """In-memory stand-ins for the repositories and Redis, so API tests run
 hermetically (no Postgres/Redis) via FastAPI dependency_overrides."""
 
+import builtins
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from app.db.generated.enums import RemotePreference
 class FakeRedis:
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
+        self.sets: dict[str, set[str]] = {}
 
     async def get(self, key: str) -> str | None:
         return self.store.get(key)
@@ -28,6 +30,7 @@ class FakeRedis:
     async def delete(self, *keys: str) -> None:
         for key in keys:
             self.store.pop(key, None)
+            self.sets.pop(key, None)
 
     async def incr(self, key: str) -> int:
         value = int(self.store.get(key, "0")) + 1
@@ -36,6 +39,23 @@ class FakeRedis:
 
     async def expire(self, key: str, seconds: int) -> None:
         pass
+
+    # Sets back the refresh-token family index (Phase 18 reuse detection).
+    async def sadd(self, key: str, *members: str) -> int:
+        current = self.sets.setdefault(key, set())
+        before = len(current)
+        current.update(members)
+        return len(current) - before
+
+    async def srem(self, key: str, *members: str) -> int:
+        current = self.sets.get(key, set())
+        removed = sum(1 for member in members if member in current)
+        current.difference_update(members)
+        return removed
+
+    async def smembers(self, key: str) -> "builtins.set[str]":
+        # `set` is shadowed by the method above inside this class body.
+        return builtins.set(self.sets.get(key, builtins.set()))
 
     async def ping(self) -> bool:
         return True

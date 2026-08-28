@@ -18,6 +18,8 @@ from app.sources.exceptions import (
 Throttle = Callable[[], Awaitable[None]]
 
 USER_AGENT = "job-agent/0.1 (personal job search agent; contact: see repository)"
+# Board feeds are a few MB at most; anything bigger is not a job listing.
+DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024
 
 
 class SourceHTTPClient:
@@ -28,11 +30,13 @@ class SourceHTTPClient:
         source_name: str,
         timeout_seconds: float,
         throttle: Throttle | None = None,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> None:
         self._client = client
         self._source_name = source_name
         self._timeout = timeout_seconds
         self._throttle = throttle
+        self._max_response_bytes = max_response_bytes
 
     async def get_json(
         self,
@@ -69,13 +73,30 @@ class SourceHTTPClient:
         if self._throttle is not None:
             await self._throttle()
         try:
-            response = await self._client.get(
+            # Streamed so a hostile or broken upstream cannot make us buffer an
+            # unbounded body; the client's max_redirects caps redirect chains.
+            async with self._client.stream(
+                "GET",
                 url,
                 params=params,
                 headers={"User-Agent": USER_AGENT, **(headers or {})},
                 timeout=self._timeout,
                 follow_redirects=True,
-            )
+            ) as streamed:
+                body = bytearray()
+                async for chunk in streamed.aiter_bytes():
+                    body += chunk
+                    if len(body) > self._max_response_bytes:
+                        raise SourceUnavailableError(
+                            self._source_name,
+                            f"response from {url} exceeds {self._max_response_bytes} bytes",
+                        )
+                response = httpx.Response(
+                    status_code=streamed.status_code,
+                    headers=streamed.headers,
+                    content=bytes(body),
+                    request=streamed.request,
+                )
         except httpx.TimeoutException as exc:
             raise SourceUnavailableError(self._source_name, f"timeout calling {url}") from exc
         except httpx.HTTPError as exc:

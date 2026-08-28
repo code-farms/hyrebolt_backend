@@ -124,7 +124,12 @@ class AgentTasks:
         deduped = 0
         failed = 0
         for user in await self._users.list_active():
-            outcomes = await self._digest.send_for_user(user, run_date)
+            try:
+                outcomes = await self._digest.send_for_user(user, run_date)
+            except Exception as exc:  # noqa: BLE001 - one user must not sink the batch
+                logger.warning("agent_digest_user_failed", user_id=user.id, error=str(exc))
+                failed += 1
+                continue
             created += sum(1 for o in outcomes.values() if o in ("created", "sent"))
             deduped += sum(1 for o in outcomes.values() if o == "deduped")
             failed += sum(1 for o in outcomes.values() if o == "failed")
@@ -138,12 +143,32 @@ class AgentTasks:
         return {"created": created, "skipped": deduped, "failed": failed}
 
 
+# Shared with WorkerSettings.max_tries: arq's job context exposes `job_try` but
+# not the configured maximum, so the dead-letter decision reads this constant.
+MAX_TRIES = 3
+
+
 def _log_final_failure(ctx: dict[str, Any], task: str, exc: Exception) -> None:
-    max_tries = ctx.get("max_tries", 3) or 3
-    if ctx.get("job_try", 1) >= max_tries:
-        logger.error("task_failed_permanently", task=task, error=str(exc))
+    job_try = int(ctx.get("job_try") or 1)
+    if job_try >= MAX_TRIES:
+        # Dead letter: the traceback is captured here because this is the last
+        # time anyone will see this failure (see WorkerSettings.keep_result).
+        logger.error(
+            "task_failed_permanently",
+            task=task,
+            job_id=ctx.get("job_id"),
+            tries=job_try,
+            error=str(exc),
+            exc_info=exc,
+        )
     else:
-        logger.warning("task_failed_will_retry", task=task, try_number=ctx.get("job_try"), error=str(exc))
+        logger.warning(
+            "task_failed_will_retry",
+            task=task,
+            job_id=ctx.get("job_id"),
+            try_number=job_try,
+            error=str(exc),
+        )
 
 
 async def daily_job_search(ctx: dict[str, Any]) -> dict[str, Any]:

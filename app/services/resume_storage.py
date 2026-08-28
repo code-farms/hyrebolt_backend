@@ -31,8 +31,11 @@ class ResumeStorage:
         target = self.path_for(relative)
 
         def _write() -> None:
-            target.parent.mkdir(parents=True, exist_ok=True)
+            # Resumes are personal documents: owner-only on disk, so a shared
+            # volume or host account never exposes them.
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             target.write_bytes(data)
+            target.chmod(0o600)
 
         await asyncio.to_thread(_write)
         return relative

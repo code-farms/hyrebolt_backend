@@ -15,7 +15,12 @@ router = APIRouter(prefix="/api/v1", tags=["search"])
 
 
 def _run_out(run: SearchRun) -> SearchRunOut:
-    return SearchRunOut.model_validate(run, from_attributes=True)
+    out = SearchRunOut.model_validate(run, from_attributes=True)
+    if run.userId is None:
+        # Scheduled runs aggregate every user's target roles/locations into
+        # one query; that union is not any single caller's to see.
+        out.query = None
+    return out
 
 
 @router.post(

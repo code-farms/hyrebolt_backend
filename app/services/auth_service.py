@@ -17,6 +17,9 @@ from app.repositories import ProfileRepository, UserRepository
 logger = get_logger(__name__)
 
 _REFRESH_KEY = "refresh:{jti}"
+# Every live refresh jti a user holds (one per device/session). Lets a replayed
+# token revoke the whole family instead of only itself.
+_USER_REFRESH_SET = "refresh_user:{user_id}"
 
 # Verified against when the email is unknown, so "no such user" costs the same
 # bcrypt work as "wrong password" — no timing side-channel for enumeration.
@@ -63,17 +66,25 @@ class AuthService:
         return access, refresh, user
 
     async def refresh(self, refresh_token: str) -> tuple[str, str]:
-        """Validate + rotate: the presented token is revoked and a new pair issued."""
+        """Validate + rotate: the presented token is revoked and a new pair issued.
+
+        A well-formed, unexpired token whose jti is no longer stored has
+        already been rotated — i.e. it is being replayed. Either the legitimate
+        client or a thief holds the successor, so every refresh token of that
+        user is revoked and all sessions must log in again."""
         payload = self._decode_refresh(refresh_token)
         jti, user_id = payload["jti"], payload["sub"]
         key = _REFRESH_KEY.format(jti=jti)
         stored = await self._redis.get(key)
         if stored != user_id:
+            if stored is None:
+                await self._revoke_all(user_id)
+                logger.warning("refresh_token_reuse_detected", user_id=user_id)
             raise UnauthorizedError("Refresh token is no longer valid.", "invalid_token")
         user = await self._users.get_by_id(user_id)
         if user is None or not user.isActive or user.deletedAt is not None:
             raise UnauthorizedError("Refresh token is no longer valid.", "invalid_token")
-        await self._redis.delete(key)
+        await self._revoke(user_id, jti)
         return await self._issue_tokens(user_id)
 
     async def logout(self, refresh_token: str | None) -> None:
@@ -84,14 +95,28 @@ class AuthService:
             payload = self._decode_refresh(refresh_token)
         except UnauthorizedError:
             return
-        await self._redis.delete(_REFRESH_KEY.format(jti=payload["jti"]))
+        await self._revoke(payload["sub"], payload["jti"])
 
     async def _issue_tokens(self, user_id: str) -> tuple[str, str]:
         access = create_access_token(self._settings, user_id)
         refresh, jti = create_refresh_token(self._settings, user_id)
         ttl_seconds = self._settings.refresh_token_expire_days * 86400
         await self._redis.set(_REFRESH_KEY.format(jti=jti), user_id, ex=ttl_seconds)
+        family = _USER_REFRESH_SET.format(user_id=user_id)
+        await self._redis.sadd(family, jti)
+        await self._redis.expire(family, ttl_seconds)
         return access, refresh
+
+    async def _revoke(self, user_id: str, jti: str) -> None:
+        await self._redis.delete(_REFRESH_KEY.format(jti=jti))
+        await self._redis.srem(_USER_REFRESH_SET.format(user_id=user_id), jti)
+
+    async def _revoke_all(self, user_id: str) -> None:
+        family = _USER_REFRESH_SET.format(user_id=user_id)
+        jtis = await self._redis.smembers(family)
+        if jtis:
+            await self._redis.delete(*(_REFRESH_KEY.format(jti=jti) for jti in jtis))
+        await self._redis.delete(family)
 
     def _decode_refresh(self, token: str) -> dict[str, str]:
         try:

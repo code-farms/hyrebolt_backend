@@ -77,11 +77,16 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         # Custom validators surface the raised exception under ctx.error;
-        # encode it as text so the response stays JSON-serializable.
-        errors = jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
+        # encode it as text so the response stays JSON-serializable. The
+        # submitted value (`input`) is dropped: it may be a password or a
+        # large payload and the client already has it.
+        errors = jsonable_encoder(
+            [{k: v for k, v in error.items() if k not in ("input", "url")} for error in exc.errors()],
+            custom_encoder={Exception: str},
+        )
         logger.warning("validation_error", path=request.url.path, errors=errors)
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={"error_code": "validation_error", "message": errors},
         )
 

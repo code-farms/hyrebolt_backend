@@ -5,10 +5,11 @@ import jwt
 import redis.asyncio as redis
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from redis.exceptions import RedisError
 
 from app.ai import LLMProvider, MockLLMProvider, OpenAIProvider
 from app.core.config import Settings, get_settings
-from app.core.exceptions import RateLimitedError, UnauthorizedError
+from app.core.exceptions import DependencyUnavailableError, RateLimitedError, UnauthorizedError
 from app.core.http import get_shared_http_client
 from app.core.redis import get_redis_client
 from app.core.security import decode_token
@@ -81,8 +82,12 @@ def get_redis(settings: SettingsDep) -> redis.Redis:
 RedisDep = Annotated[redis.Redis, Depends(get_redis)]
 
 
-def get_health_service(prisma: PrismaDep, redis_client: RedisDep) -> HealthService:
-    return HealthService(prisma=prisma, redis_client=redis_client)
+def get_health_service(
+    prisma: PrismaDep, redis_client: RedisDep, settings: SettingsDep
+) -> HealthService:
+    return HealthService(
+        prisma=prisma, redis_client=redis_client, expose_details=not settings.is_production
+    )
 
 
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
@@ -550,9 +555,14 @@ def rate_limit(scope: str, limit_attr: str = "auth_rate_limit_per_minute"):  # t
     async def dependency(request: Request, redis_client: RedisDep, settings: SettingsDep) -> None:
         client_ip = request.client.host if request.client else "unknown"
         key = f"ratelimit:{scope}:{client_ip}"
-        count = await redis_client.incr(key)
-        if count == 1:
-            await redis_client.expire(key, 60)
+        try:
+            count = await redis_client.incr(key)
+            if count == 1:
+                await redis_client.expire(key, 60)
+        except RedisError as exc:
+            # Fail closed with an honest status: the limiter's backing store is
+            # down, which is a 503, not an internal error.
+            raise DependencyUnavailableError("Rate limiter unavailable. Try again shortly.") from exc
         if count > getattr(settings, limit_attr):
             raise RateLimitedError("Too many attempts. Try again in a minute.")
 

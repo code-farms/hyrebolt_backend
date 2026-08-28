@@ -140,16 +140,19 @@ class DiscoveryService:
         try:
             return await self._execute(run, query, runnable, rejected)
         except Exception as exc:
-            await self._search_runs.finish(
-                run.id,
-                status=SearchRunStatus.FAILED,
-                sources_succeeded=[],
-                sources_failed=attempted,
-                jobs_found=0,
-                jobs_new=0,
-                jobs_duplicate=0,
-                error_summary=f"internal error: {exc}",
-            )
+            try:
+                await self._search_runs.finish(
+                    run.id,
+                    status=SearchRunStatus.FAILED,
+                    sources_succeeded=[],
+                    sources_failed=attempted,
+                    jobs_found=0,
+                    jobs_new=0,
+                    jobs_duplicate=0,
+                    error_summary=f"internal error: {exc}"[:500],
+                )
+            except Exception as finish_exc:  # noqa: BLE001 - never mask the original failure
+                logger.error("search_run_finish_failed", run_id=run.id, error=str(finish_exc))
             raise
         finally:
             structlog.contextvars.unbind_contextvars("run_id")

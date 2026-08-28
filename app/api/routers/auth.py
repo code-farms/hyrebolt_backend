@@ -30,8 +30,15 @@ def _set_refresh_cookie(response: Response, settings: Settings, token: str) -> N
     )
 
 
-def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(REFRESH_COOKIE, path=_COOKIE_PATH)
+def _clear_refresh_cookie(response: Response, settings: Settings) -> None:
+    # Same attributes as set_cookie: browsers only clear an exact match.
+    response.delete_cookie(
+        REFRESH_COOKIE,
+        path=_COOKIE_PATH,
+        httponly=True,
+        samesite="lax",
+        secure=settings.environment != "development",
+    )
 
 
 @router.post(
@@ -76,6 +83,8 @@ async def refresh(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, auth: AuthServiceDep, response: Response) -> None:
+async def logout(
+    request: Request, auth: AuthServiceDep, settings: SettingsDep, response: Response
+) -> None:
     await auth.logout(request.cookies.get(REFRESH_COOKIE))
-    _clear_refresh_cookie(response)
+    _clear_refresh_cookie(response, settings)

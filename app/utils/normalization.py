@@ -135,12 +135,30 @@ def compute_content_hash(
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
+_WEB_SCHEMES = frozenset({"http", "https"})
+
+
+def is_web_url(url: str | None) -> bool:
+    """True only for absolute http(s) URLs — the only kind that may be stored
+    as a job/source link and rendered as a hyperlink."""
+    if not url:
+        return False
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        return False
+    return parts.scheme.lower() in _WEB_SCHEMES and bool(parts.netloc)
+
+
 def canonicalize_url(url: str | None) -> str | None:
     """Stable form for dedup signal 1: lowercase scheme/host, drop fragments,
-    tracking params, and trailing slashes."""
+    tracking params, and trailing slashes. Non-web schemes (javascript:,
+    data:, file:) are dropped outright — scraped postings are untrusted."""
     if not url:
         return None
     parts = urlsplit(url.strip())
+    if parts.scheme and parts.scheme.lower() not in _WEB_SCHEMES:
+        return None
     if not parts.scheme or not parts.netloc:
         return url.strip() or None
     query = [

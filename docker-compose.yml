@@ -6,7 +6,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Loopback only: the database is reachable from this machine for local
+      # tooling but never from the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -14,21 +16,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   api:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    # Development: auto-reload on the bind-mounted source. The image's own CMD
+    # is the production command (no reloader, proxy headers).
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Development only: bind mounts and the pre-existing named volumes are
+    # owned by the host/root user. Production runs as the image's `app` user.
+    user: "0:0"
     env_file: .env
     ports:
       - "${BACKEND_PORT:-8000}:8000"
@@ -51,12 +61,15 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    restart: unless-stopped
+    mem_limit: 1g
 
   worker:
     build:
       context: .
       dockerfile: docker/Dockerfile
     command: ["uv", "run", "arq", "app.worker.settings.WorkerSettings"]
+    user: "0:0" # development only, see api
     env_file: .env
     volumes:
       - ./app:/backend/app
@@ -64,17 +77,31 @@ services:
       - ./prisma:/backend/prisma
       # Own generated-client volume so it never races the api container's.
       - worker_generated:/backend/app/db/generated
+      - resume_data:/backend/data
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Cheap probe: the worker refreshes arq's heartbeat key every
+    # health_check_interval seconds (app/worker/settings.py); `arq --check`
+    # imported the whole application graph and regularly blew the timeout.
     healthcheck:
-      test: ["CMD", "uv", "run", "arq", "--check", "app.worker.settings.WorkerSettings"]
+      test:
+        - "CMD"
+        - "uv"
+        - "run"
+        - "python"
+        - "-c"
+        - "import os,sys,redis; sys.exit(0 if redis.from_url(os.environ['REDIS_URL']).exists('arq:queue:health-check') else 1)"
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+    mem_limit: 1g
+    # Let an in-flight discovery run finish before SIGKILL on `compose down`.
+    stop_grace_period: 60s
 
 volumes:
   postgres_data:

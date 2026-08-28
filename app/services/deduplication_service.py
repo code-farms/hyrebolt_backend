@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from app.db.generated.errors import UniqueViolationError
 from app.repositories import (
     CompanyRepository,
     JobRepository,
@@ -130,9 +131,19 @@ class DeduplicationService:
                 score=round(decision.score, 3),
             )
 
-        created = await self._jobs.create_from_normalized(
-            job, source_id=source_id, company_id=company.id, duplicate_of_id=duplicate_of_id
-        )
+        try:
+            created = await self._jobs.create_from_normalized(
+                job, source_id=source_id, company_id=company.id, duplicate_of_id=duplicate_of_id
+            )
+        except UniqueViolationError:
+            # A concurrent run (manual search overlapping the scheduled one)
+            # persisted this listing between our lookup and our insert. The
+            # unique (sourceId, externalId) constraint held; treat it as the
+            # duplicate it is instead of failing the whole SearchRun.
+            logger.info(
+                "job_persist_lost_race", source=job.sourceName, external_id=job.externalId
+            )
+            return None
         return created.id
 
     async def _attach_listing(

@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.db.generated import Json
+from app.db.generated.errors import UniqueViolationError
 from app.db.generated.models import Notification
 from app.models import NotificationChannel, NotificationStatus, NotificationType
 from app.repositories.base import BaseRepository
@@ -26,17 +27,26 @@ class NotificationRepository(BaseRepository):
         )
         if existing is not None:
             return existing, False
-        created = await self._prisma.notification.create(
-            data={
-                "dedupeKey": dedupe_key,
-                "userId": user_id,
-                "channel": channel,  # type: ignore[typeddict-item]
-                "type": notification_type,  # type: ignore[typeddict-item]
-                "subject": subject,
-                "body": body,
-                "payload": Json(payload) if payload is not None else None,
-            }
-        )
+        try:
+            created = await self._prisma.notification.create(
+                data={
+                    "dedupeKey": dedupe_key,
+                    "userId": user_id,
+                    "channel": channel,  # type: ignore[typeddict-item]
+                    "type": notification_type,  # type: ignore[typeddict-item]
+                    "subject": subject,
+                    "body": body,
+                    "payload": Json(payload) if payload is not None else None,
+                }
+            )
+        except UniqueViolationError:
+            # Lost the race with a concurrent digest run (arq retry or a second
+            # worker): the unique key did its job, return the winner's row.
+            existing = await self._prisma.notification.find_unique(
+                where={"dedupeKey": dedupe_key}
+            )
+            assert existing is not None
+            return existing, False
         return created, True
 
     async def count_since(self, since: datetime) -> int:

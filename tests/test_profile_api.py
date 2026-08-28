@@ -70,6 +70,34 @@ async def test_profile_validation_rejects_bad_values(auth_client: AuthFixture) -
     assert response.status_code == 422
 
 
+async def test_profile_list_fields_are_bounded(auth_client: AuthFixture) -> None:
+    client, _, _ = auth_client
+    headers = await _login(client)
+
+    too_many = await client.put(
+        "/api/v1/users/me/profile",
+        json={"targetRoles": [f"role {i}" for i in range(31)]},
+        headers=headers,
+    )
+    too_long = await client.put(
+        "/api/v1/users/me/profile", json={"preferredCompanies": ["x" * 121]}, headers=headers
+    )
+    huge_education = await client.put(
+        "/api/v1/users/me/profile", json={"education": {"blob": "e" * 25_000}}, headers=headers
+    )
+    fine = await client.put(
+        "/api/v1/users/me/profile",
+        json={"targetRoles": ["Backend Engineer"], "education": [{"degree": "B.Tech"}]},
+        headers=headers,
+    )
+
+    assert too_many.status_code == 422
+    assert too_long.status_code == 422
+    assert huge_education.status_code == 422
+    assert fine.status_code == 200
+    assert fine.json()["targetRoles"] == ["Backend Engineer"]
+
+
 async def test_skills_replace(auth_client: AuthFixture) -> None:
     client, _, _ = auth_client
     headers = await _login(client)

@@ -130,3 +130,46 @@ User ─1:1─ UserProfile ─1:N─ UserSkill ─N:1─ Skill
       User ─1:N─ UserPreferenceSignal ─N:1─ Job (SetNull)
       Application ─1:N─ ApplicationEvent
 ```
+
+## Connection pooling
+
+Each Prisma engine (the `api` process, the `worker` process, and every extra
+uvicorn worker) opens its own pool. Size it explicitly in `DATABASE_URL`:
+
+```
+postgresql://…/job_agent?connection_limit=10&pool_timeout=10&connect_timeout=10
+```
+
+Postgres 16 defaults to `max_connections=100`; keep the sum of all
+`connection_limit`s (plus a few for `psql`/migrations) under that. Startup
+retries the initial connection with backoff (`app/db/client.py`) so a Postgres
+restart does not kill the process.
+
+## Backup and restore
+
+Data lives in two Docker volumes: `postgres_data` (everything relational,
+including extracted resume text) and `resume_data` (the uploaded resume
+originals). `make down-v` destroys both — it now asks for confirmation.
+
+- `make db-backup` → `scripts/backup.sh`: `pg_dump -Fc` + a tarball of the
+  resume files + the applied-migrations list, into `backups/<UTC timestamp>/`.
+  Keeps the newest 14 backups. Run it from cron (daily) and copy the directory
+  off-host; RPO = the cron interval.
+- `make db-restore FROM=backups/<timestamp>` → `scripts/restore.sh`: stops
+  `api`/`worker`, `pg_restore --clean --if-exists`, restores the files, starts
+  the services again. It prompts for the database name before doing anything.
+- Restore drill: run a backup, `make down-v`, `make up`, then restore — the
+  frontend should show the same jobs, applications and resumes. Do this once
+  before relying on the backups.
+
+## Indexes (Phase 18 review)
+
+Composite indexes follow the real query shapes in `app/repositories/`:
+`Job(deletedAt, createdAt)` for every feed/list/analytics window,
+`Application(userId, updatedAt)` for the tracker's default order,
+`ApplicationEvent(status, occurredAt)` for the analytics time series,
+`SearchRun(trigger, createdAt)` for "latest scheduled run",
+`JobMatch(updatedAt)` and `Notification(createdAt)` for the agent status
+counters, and `Notification(userId, channel, …)` for the in-app bell. The
+plain `Job(sourceId)` index was dropped — `(sourceId, externalId)` already
+serves it through its leading column.

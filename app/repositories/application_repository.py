@@ -89,11 +89,18 @@ class ApplicationRepository(BaseRepository):
         return await self._prisma.applicationevent.create(data=data)  # type: ignore[arg-type]
 
     async def count_by_status(self, user_id: str) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for status in ApplicationStatus:
-            counts[status.value] = await self._prisma.application.count(
-                where={"userId": user_id, "deletedAt": None, "status": status}  # type: ignore[typeddict-item]
-            )
+        """One GROUP BY instead of a COUNT per enum member."""
+        counts: dict[str, int] = {status.value: 0 for status in ApplicationStatus}
+        groups = await self._prisma.application.group_by(
+            by=["status"],
+            where={"userId": user_id, "deletedAt": None},
+            count=True,
+        )
+        for group in groups:
+            status = group.get("status")
+            count = group.get("_count")
+            if status in counts and isinstance(count, dict):
+                counts[str(status)] = int(count.get("_all", 0))
         return counts
 
     async def count_for_user(

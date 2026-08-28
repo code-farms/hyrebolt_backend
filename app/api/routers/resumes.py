@@ -86,7 +86,11 @@ async def upload_resume(
     )
 
 
-@router.get("/gap/{job_id}", response_model=ResumeGapOut)
+@router.get(
+    "/gap/{job_id}",
+    response_model=ResumeGapOut,
+    dependencies=[rate_limit("ai", "ai_rate_limit_per_minute")],
+)
 async def selected_resume_gap(
     job_id: str,
     user: CurrentUserDep,
@@ -117,7 +121,11 @@ async def download_version(
     return FileResponse(path, media_type=version.mimeType, filename=version.fileName)
 
 
-@router.post("/versions/{version_id}/analyze", response_model=ResumeVersionOut)
+@router.post(
+    "/versions/{version_id}/analyze",
+    response_model=ResumeVersionOut,
+    dependencies=[rate_limit("ai", "ai_rate_limit_per_minute")],
+)
 async def analyze_version(
     version_id: str,
     user: CurrentUserDep,
@@ -133,7 +141,11 @@ async def analyze_version(
     return version_out(await service.get_version(user, version_id))
 
 
-@router.get("/versions/{version_id}/gap/{job_id}", response_model=ResumeGapOut)
+@router.get(
+    "/versions/{version_id}/gap/{job_id}",
+    response_model=ResumeGapOut,
+    dependencies=[rate_limit("ai", "ai_rate_limit_per_minute")],
+)
 async def version_gap(
     version_id: str,
     job_id: str,

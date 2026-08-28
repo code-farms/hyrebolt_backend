@@ -127,6 +127,28 @@ async def test_refresh_rotates_token(auth_client: AuthFixture) -> None:
     assert replay.status_code == 401
 
 
+async def test_refresh_replay_revokes_every_session_of_the_user(auth_client: AuthFixture) -> None:
+    """A rotated token presented again means someone holds a stolen copy: the
+    successor token must die with it so neither party keeps the session."""
+    client, _, fake_redis = auth_client
+    await client.post("/api/v1/auth/register", json=REGISTER)
+    await client.post("/api/v1/auth/login", json=LOGIN)
+    old_refresh = client.cookies.get("refresh_token", path="/api/v1/auth")
+
+    rotated = await client.post("/api/v1/auth/refresh")
+    assert rotated.status_code == 200
+    successor = client.cookies.get("refresh_token", path="/api/v1/auth")
+    assert successor and successor != old_refresh
+
+    client.cookies.set("refresh_token", old_refresh, path="/api/v1/auth")
+    assert (await client.post("/api/v1/auth/refresh")).status_code == 401
+
+    client.cookies.set("refresh_token", successor, path="/api/v1/auth")
+    assert (await client.post("/api/v1/auth/refresh")).status_code == 401
+    assert not any(key.startswith("refresh:") for key in fake_redis.store)
+    assert not any(key.startswith("refresh_user:") for key in fake_redis.sets)
+
+
 async def test_refresh_without_cookie_unauthorized(auth_client: AuthFixture) -> None:
     client, _, _ = auth_client
 

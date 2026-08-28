@@ -11,6 +11,7 @@ from app.api.deps import (
     RankingServiceDep,
     SavedJobRepositoryDep,
     SettingsDep,
+    rate_limit,
 )
 from app.core.exceptions import NotFoundError
 from app.models import PreferenceSignalKind
@@ -37,13 +38,15 @@ async def list_jobs(
     ranking: RankingServiceDep,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    source: str | None = Query(default=None),
-    location: str | None = Query(default=None),
+    source: str | None = Query(default=None, max_length=64),
+    location: str | None = Query(default=None, max_length=120),
     remote: bool | None = Query(default=None),
-    company: str | None = Query(default=None),
+    company: str | None = Query(default=None, max_length=120),
     minSalary: int | None = Query(default=None, ge=0),
     maxExperience: float | None = Query(default=None, ge=0, le=60),
-    skills: str | None = Query(default=None, description="comma-separated terms"),
+    skills: str | None = Query(
+        default=None, max_length=300, description="comma-separated terms (max 10)"
+    ),
     datePosted: int | None = Query(default=None, ge=1, le=90),
     minScore: float | None = Query(default=None, ge=0, le=100),
     sort: Literal["recent", "score"] = Query(default="recent"),
@@ -55,7 +58,8 @@ async def list_jobs(
         company=company,
         min_salary=minSalary,
         max_experience=maxExperience,
-        skills=tuple(term.strip() for term in (skills or "").split(",") if term.strip()),
+        # Each term is an unindexed ILIKE over title+description: cap the fan-out.
+        skills=tuple(term.strip() for term in (skills or "").split(",") if term.strip())[:10],
         date_posted_days=datePosted,
     )
     if sort == "score" or minScore is not None:
@@ -190,7 +194,11 @@ async def hide_job(
     return learned_preferences_out(await signals.learn(user))
 
 
-@router.post("/{job_id}/analyze", response_model=JobAnalysisOut)
+@router.post(
+    "/{job_id}/analyze",
+    response_model=JobAnalysisOut,
+    dependencies=[rate_limit("ai", "ai_rate_limit_per_minute")],
+)
 async def analyze_job(
     job_id: str,
     user: CurrentUserDep,
@@ -205,7 +213,11 @@ async def analyze_job(
     return analysis_out(row)
 
 
-@router.get("/{job_id}/match", response_model=MatchOut)
+@router.get(
+    "/{job_id}/match",
+    response_model=MatchOut,
+    dependencies=[rate_limit("ai", "ai_rate_limit_per_minute")],
+)
 async def get_job_match(
     job_id: str,
     user: CurrentUserDep,

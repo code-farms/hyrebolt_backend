@@ -340,17 +340,17 @@ model Job {
 
   @@index([companyId])
   @@index([companyName])
-  @@index([sourceId])
   @@index([location])
   @@index([postedAt])
   @@index([contentHash])
   @@index([canonicalUrl])
   @@index([createdAt])
-  @@index([sourceId, externalId])
+  @@index([sourceId, externalId]) // also serves plain sourceId lookups (leading column)
   @@index([duplicateOfId])
   @@index([normalizedTitle])
   @@index([normalizedTitle, normalizedLocation])
-  @@index([deletedAt, postedAt]) // "active jobs, newest first" hot path
+  @@index([deletedAt, postedAt]) // list_active: "active jobs, newest posted first"
+  @@index([deletedAt, createdAt]) // feed/list/analytics hot path: active jobs by createdAt
 }
 
 // Phase 6 "store source relationships": one canonical Job, N listings. The
@@ -461,6 +461,7 @@ model JobMatch {
   @@index([jobId])
   @@index([userId, overallScore]) // GET /jobs/recommended sort
   @@index([userId, recommendation])
+  @@index([updatedAt]) // agent status: matches refreshed since the last run
 }
 
 // ─────────────────────────── USER ↔ JOB ───────────────────────────
@@ -505,6 +506,7 @@ model Application {
   @@unique([userId, jobId])
   @@index([jobId])
   @@index([userId, status]) // Kanban columns + stats (Phase 12)
+  @@index([userId, updatedAt]) // default tracker list order
 }
 
 // Phase 12 timeline (Discovered → Saved → Applied → ...). Included now so
@@ -522,6 +524,7 @@ model ApplicationEvent {
   createdAt DateTime @default(now())
 
   @@index([applicationId, occurredAt])
+  @@index([status, occurredAt]) // analytics: applied/interview events per day
 }
 
 // ─────────────────────────── PIPELINE / OPS ───────────────────────────
@@ -554,6 +557,7 @@ model SearchRun {
   @@index([status])
   @@index([createdAt]) // GET /agent/status "last run"
   @@index([userId, createdAt])
+  @@index([trigger, createdAt]) // latest scheduled run
 }
 
 model Notification {
@@ -583,6 +587,9 @@ model Notification {
   @@index([userId, createdAt])
   @@index([userId, readAt])
   @@index([status])
+  @@index([createdAt]) // agent status: notifications since the last run
+  @@index([userId, channel, createdAt]) // bell list (IN_APP only)
+  @@index([userId, channel, readAt]) // bell unread count / mark-all-read
 }
 
 model CompanyWatchlist {

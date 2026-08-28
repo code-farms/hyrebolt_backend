@@ -1,8 +1,11 @@
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# Values that only ever appear in examples/templates; refused in production.
+_PLACEHOLDER_SECRET_MARKERS = ("change-me", "changeme", "example", "placeholder", "replace")
 
 
 class Settings(BaseSettings):
@@ -15,12 +18,22 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["json", "console"] = "console"
 
-    # Auth
-    jwt_secret: str
-    jwt_algorithm: str = "HS256"
+    # Auth. HS256 needs a secret at least as long as its 256-bit output to be
+    # worth anything; a short or template value makes every token forgeable.
+    jwt_secret: str = Field(min_length=32)
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     auth_rate_limit_per_minute: int = 10
+
+    # Hardening (Phase 18). LLM-backed routes share one per-IP budget; JSON
+    # bodies above the cap are rejected before parsing (uploads stream
+    # separately under RESUME_MAX_UPLOAD_MB).
+    ai_rate_limit_per_minute: int = 30
+    max_request_body_bytes: int = 1_048_576
+    # Comma-separated reverse-proxy IPs whose X-Forwarded-For is trusted;
+    # read by uvicorn (--proxy-headers) so rate limits see the real client.
+    forwarded_allow_ips: str = "127.0.0.1"
 
     # Discovery
     discovery_source_timeout_seconds: float = 60.0  # whole per-source task incl. retries
@@ -115,8 +128,28 @@ class Settings(BaseSettings):
     @classmethod
     def split_cors_origins(cls, value: object) -> object:
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            value = [origin.strip() for origin in value.split(",") if origin.strip()]
+        if isinstance(value, list) and any(origin == "*" for origin in value):
+            # Starlette echoes the request Origin for "*" + credentials, which
+            # would turn every authenticated endpoint into a cross-site read.
+            raise ValueError("CORS_ORIGINS must list explicit origins; '*' is not allowed")
         return value
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
+    @model_validator(mode="after")
+    def check_production_hardening(self) -> "Settings":
+        if not self.is_production:
+            return self
+        lowered = self.jwt_secret.lower()
+        if any(marker in lowered for marker in _PLACEHOLDER_SECRET_MARKERS):
+            raise ValueError("JWT_SECRET looks like a placeholder; generate one with openssl rand -hex 32")
+        insecure = [origin for origin in self.cors_origins if not origin.startswith("https://")]
+        if insecure:
+            raise ValueError(f"CORS_ORIGINS must be https:// in production: {insecure}")
+        return self
 
 
 @lru_cache

@@ -4,7 +4,11 @@ Only the two formats the spec names are accepted, verified by content
 sniffing rather than the client's Content-Type (browsers send
 application/octet-stream for .docx). Parsing is CPU-bound library code, so it
 runs in a worker thread under a timeout, and any library failure becomes a
-422 — a malformed upload is user input, not a server fault."""
+422 — a malformed upload is user input, not a server fault.
+
+Phase 18: archives are inspected before decompression (a 5 MB DOCX can
+expand to gigabytes) and PDFs are capped by page count, because the timeout
+only cancels the await — it cannot stop a thread mid-parse."""
 
 import asyncio
 import io
@@ -22,9 +26,17 @@ MIME_TYPES: dict[ResumeKind, str] = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
+# A résumé is a few pages. These are generous caps, not typical sizes.
+MAX_DOCX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 100
+MAX_DOCX_MEMBERS = 2000
+MAX_PDF_PAGES = 100
+
 _UNSUPPORTED = "Only PDF and DOCX resumes are supported."
 _NO_TEXT = "No extractable text found — scanned PDFs (OCR) are not supported."
 _UNREADABLE = "Could not read this file."
+_TOO_COMPLEX = "This file is too large or complex to process as a resume."
+_ENCRYPTED = "Password-protected PDFs are not supported — remove the password and re-upload."
 
 # Postgres rejects NUL in text/jsonb; PDF extraction also leaks stray controls.
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -61,19 +73,41 @@ def sniff_kind(filename: str, head: bytes) -> ResumeKind:
     raise InvalidInputError(_UNSUPPORTED)
 
 
+def check_docx_archive(data: bytes) -> None:
+    """Rejects decompression bombs using the central directory alone — no
+    member is inflated here."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            members = archive.infolist()
+            if "word/document.xml" not in {member.filename for member in members}:
+                raise InvalidInputError(_UNSUPPORTED)
+            if len(members) > MAX_DOCX_MEMBERS:
+                raise InvalidInputError(_TOO_COMPLEX)
+            total = sum(member.file_size for member in members)
+            if total > MAX_DOCX_UNCOMPRESSED_BYTES:
+                raise InvalidInputError(_TOO_COMPLEX)
+            compressed = max(1, sum(member.compress_size for member in members))
+            if total / compressed > MAX_DOCX_COMPRESSION_RATIO:
+                raise InvalidInputError(_TOO_COMPLEX)
+    except zipfile.BadZipFile as exc:
+        raise InvalidInputError(_UNREADABLE) from exc
+
+
 def _extract_pdf(data: bytes) -> str:
     from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(data))
-    if reader.is_encrypted:
-        reader.decrypt("")
+    # Owner-password-only PDFs open with an empty user password; anything
+    # else is genuinely locked and unreadable for us.
+    if reader.is_encrypted and not reader.decrypt(""):
+        raise InvalidInputError(_ENCRYPTED)
+    if len(reader.pages) > MAX_PDF_PAGES:
+        raise InvalidInputError(_TOO_COMPLEX)
     return "\n\n".join(page.extract_text() or "" for page in reader.pages)
 
 
 def _extract_docx(data: bytes) -> str:
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        if "word/document.xml" not in archive.namelist():
-            raise InvalidInputError(_UNSUPPORTED)
+    check_docx_archive(data)
 
     import docx
 

@@ -8,6 +8,7 @@ from app.api.deps import (
     NotificationRepositoryDep,
     ProfileRepositoryDep,
     SettingsDep,
+    rate_limit,
 )
 from app.core.exceptions import NotFoundError
 from app.core.http import get_shared_http_client
@@ -73,7 +74,11 @@ async def channels(
     )
 
 
-@router.get("/digest/preview", response_model=DigestPreviewOut)
+@router.get(
+    "/digest/preview",
+    response_model=DigestPreviewOut,
+    dependencies=[rate_limit("ai", "ai_rate_limit_per_minute")],
+)
 async def digest_preview(
     user: CurrentUserDep,
     profiles: ProfileRepositoryDep,

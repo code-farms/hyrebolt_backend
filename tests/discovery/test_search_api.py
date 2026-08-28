@@ -102,7 +102,8 @@ async def test_list_runs_visibility_and_pagination(
         userId=None,
         trigger=SearchTrigger.SCHEDULED,
         status=SearchRunStatus.COMPLETED,
-        query=None,
+        # The scheduled run's query is the union of every user's targets.
+        query={"targetRoles": ["ceo of someone else"], "locations": ["their city"]},
         startedAt=datetime.now(UTC),
     )
     runs.runs["foreign"] = FakeSearchRun(
@@ -121,6 +122,10 @@ async def test_list_runs_visibility_and_pagination(
     assert body["total"] == 2  # own + global, never foreign
     ids = {item["id"] for item in body["items"]}
     assert "global" in ids and "foreign" not in ids
+    # Global runs are visible, but their aggregated query is nobody's to read.
+    global_run = next(item for item in body["items"] if item["id"] == "global")
+    assert global_run["query"] is None
+    assert "someone else" not in response.text
 
 
 async def test_get_run_scoping(auth_client: AuthFixture, search_overrides) -> None:
