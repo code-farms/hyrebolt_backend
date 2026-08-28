@@ -7,7 +7,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.exceptions import RedisError
 
-from app.ai import LLMProvider, MockLLMProvider, OpenAIProvider
+from app.ai import ChatCompletionsProvider, LLMProvider, MockLLMProvider
 from app.core.config import Settings, get_settings
 from app.core.exceptions import DependencyUnavailableError, RateLimitedError, UnauthorizedError
 from app.core.http import get_shared_http_client
@@ -200,12 +200,12 @@ DiscoveryServiceDep = Annotated[DiscoveryService, Depends(get_discovery_service)
 
 
 def get_llm_provider(settings: SettingsDep) -> LLMProvider:
-    if settings.llm_provider == "openai" and settings.openai_api_key:
-        return OpenAIProvider(
+    if settings.llm_provider == "api" and settings.llm_api_key:
+        return ChatCompletionsProvider(
             get_shared_http_client(),
-            api_key=settings.openai_api_key,
-            model=settings.openai_model,
-            base_url=settings.openai_base_url,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
             timeout_seconds=settings.llm_timeout_seconds,
         )
     return MockLLMProvider()

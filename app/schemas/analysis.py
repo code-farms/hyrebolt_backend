@@ -9,6 +9,12 @@ from app.models import EmploymentType
 
 WorkMode = Literal["REMOTE", "HYBRID", "ONSITE"]
 
+# Bump whenever the job-analysis SYSTEM_PROMPT or prompt layout changes: stored
+# analyses from older versions are treated as stale (re-analyzed by the daily
+# agent, hidden from the API until then). Lives here, not in the service, so the
+# wire serializers can compare against it without importing the service layer.
+JOB_ANALYSIS_PROMPT_VERSION = "v1"
+
 
 class SalaryOut(BaseModel):
     min: int | None = None

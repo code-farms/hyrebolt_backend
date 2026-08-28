@@ -73,8 +73,8 @@ def _assistant_shape(system: str, prompt: str) -> dict[str, Any]:
     return {
         "content": (
             f"[Mock draft] {section} for {title} at {company}.\n\n"
-            "The mock LLM provider does not write real content. Set LLM_PROVIDER=openai "
-            "(and OPENAI_API_KEY) to generate drafts from your profile and resume."
+            "The mock LLM provider does not write real content. Set LLM_PROVIDER=api "
+            "(and LLM_API_KEY) to generate drafts from your profile and resume."
         )
     }
 

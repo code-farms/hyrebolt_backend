@@ -17,8 +17,14 @@ class RankingOut(BaseModel):
     companyScore: float
     feedbackScore: float
     explanations: list[str] = Field(default_factory=list)
+
+
 from app.models import EmploymentType, MatchFeedback, MatchRecommendation
-from app.schemas.analysis import JobAnalysisOut, JobAnalysisResult
+from app.schemas.analysis import (
+    JOB_ANALYSIS_PROMPT_VERSION,
+    JobAnalysisOut,
+    JobAnalysisResult,
+)
 
 
 class JobMatchSummaryOut(BaseModel):
@@ -129,11 +135,20 @@ def job_out(job: Job) -> JobOut:
         ],
         duplicateOfId=job.duplicateOfId,
         duplicateIds=[duplicate.id for duplicate in duplicates],
-        analysis=analysis_out(job.analysis) if getattr(job, "analysis", None) else None,
+        analysis=_current_analysis_out(getattr(job, "analysis", None)),
         match=match_summary,
         saved=bool(viewer_saved),
         createdAt=job.createdAt,
     )
+
+
+def _current_analysis_out(row: JobAnalysis | None) -> JobAnalysisOut | None:
+    """A stale-version analysis (older prompt, or the mock provider's empty
+    shape from before a real key was configured) is hidden so the client can
+    request a fresh one instead of rendering an empty card."""
+    if row is None or row.promptVersion != JOB_ANALYSIS_PROMPT_VERSION:
+        return None
+    return analysis_out(row)
 
 
 def analysis_out(row: JobAnalysis) -> JobAnalysisOut:

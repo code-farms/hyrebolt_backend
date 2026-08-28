@@ -115,11 +115,13 @@ class Settings(BaseSettings):
     analytics_relevant_min_score: float = 75.0
     analytics_company_limit: int = 10
 
-    # AI (Phase 7). Default "mock": no API key needed in dev/tests.
-    llm_provider: Literal["mock", "openai"] = "mock"
-    openai_api_key: str | None = None
-    openai_model: str = "gpt-4o-mini"
-    openai_base_url: str = "https://api.openai.com/v1"
+    # AI (Phase 7). Default "mock": no API key needed in dev/tests. "api" talks
+    # to any OpenAI-compatible chat-completions endpoint (Gemini, OpenAI, Groq,
+    # ...) selected purely by LLM_BASE_URL + LLM_MODEL.
+    llm_provider: Literal["mock", "api"] = "mock"
+    llm_api_key: str | None = None
+    llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    llm_model: str = "gemini-3.1-flash-lite"
     llm_timeout_seconds: float = 30.0
     llm_max_retries: int = 2
     llm_retry_base_delay_seconds: float = 1.0  # 0 => instant retries (tests)

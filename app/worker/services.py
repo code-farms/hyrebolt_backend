@@ -2,7 +2,7 @@
 app/api/deps.py does per-request, but over the module singletons and built
 once at worker startup."""
 
-from app.ai import LLMProvider, MockLLMProvider, OpenAIProvider
+from app.ai import ChatCompletionsProvider, LLMProvider, MockLLMProvider
 from app.core.config import Settings
 from app.core.http import get_shared_http_client
 from app.core.redis import get_redis_client
@@ -39,12 +39,12 @@ from app.worker.tasks import AgentTasks
 
 
 def _build_llm_provider(settings: Settings) -> LLMProvider:
-    if settings.llm_provider == "openai" and settings.openai_api_key:
-        return OpenAIProvider(
+    if settings.llm_provider == "api" and settings.llm_api_key:
+        return ChatCompletionsProvider(
             get_shared_http_client(),
-            api_key=settings.openai_api_key,
-            model=settings.openai_model,
-            base_url=settings.openai_base_url,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
             timeout_seconds=settings.llm_timeout_seconds,
         )
     return MockLLMProvider()

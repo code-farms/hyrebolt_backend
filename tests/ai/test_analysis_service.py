@@ -137,9 +137,7 @@ async def test_nulls_are_preserved_never_invented() -> None:
 
 
 async def test_retryable_error_then_success() -> None:
-    provider = ScriptedProvider(
-        [LLMRateLimitedError("slow down", retry_after=9.0), FULL_ANALYSIS]
-    )
+    provider = ScriptedProvider([LLMRateLimitedError("slow down", retry_after=9.0), FULL_ANALYSIS])
     service, _, sleeps = make_service(provider)
 
     row = await service.analyze_job(FakeJob())  # type: ignore[arg-type]
@@ -155,13 +153,17 @@ async def test_non_retryable_validation_error_raises() -> None:
 
     with pytest.raises(LLMResponseError):
         await service.analyze_job(FakeJob())  # type: ignore[arg-type]
-    assert provider.calls == 1  # response errors are not retried
+    # Schema validation runs after the retry loop: well-formed JSON with the
+    # wrong shape is a prompt problem, so it is not re-requested.
+    assert provider.calls == 1
 
 
 async def test_analyze_unanalyzed_batch_skips_failures() -> None:
     jobs = [FakeJob(), FakeJob(), FakeJob()]
+    # Job 2 returns corrupted JSON on every attempt (1 + llm_max_retries=2
+    # retries) and is skipped; jobs 1 and 3 succeed.
     provider = ScriptedProvider(
-        [FULL_ANALYSIS, LLMResponseError("garbage"), FULL_ANALYSIS]
+        [FULL_ANALYSIS, *([LLMResponseError("garbage")] * 3), FULL_ANALYSIS]
     )
     service, analyses, _ = make_service(provider, jobs=jobs)
 
@@ -169,6 +171,7 @@ async def test_analyze_unanalyzed_batch_skips_failures() -> None:
 
     assert analyzed == 2
     assert len(analyses.rows) == 2
+    assert provider.calls == 5
 
 
 async def test_mock_provider_end_to_end() -> None:

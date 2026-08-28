@@ -3,7 +3,12 @@ import asyncio
 import pytest
 
 from app.ai.base import LLMProvider, LLMResult
-from app.ai.exceptions import LLMRateLimitedError, LLMResponseError, LLMUnavailableError
+from app.ai.exceptions import (
+    LLMError,
+    LLMRateLimitedError,
+    LLMResponseError,
+    LLMUnavailableError,
+)
 from app.ai.retry import complete_json_with_retries
 from tests.ai.test_analysis_service import ScriptedProvider
 
@@ -49,9 +54,26 @@ async def test_gives_up_after_max_retries() -> None:
 
 
 async def test_non_retryable_error_is_raised_immediately() -> None:
+    provider = ScriptedProvider([LLMError("rejected (400)"), {"never": 1}])
+    with pytest.raises(LLMError):
+        await call(provider)
+    assert provider.calls == 1
+
+
+async def test_corrupted_json_is_retried() -> None:
+    # A JSON-mode glitch (bad token mid-document) is transient: the same
+    # prompt usually parses on the next attempt.
+    provider = ScriptedProvider([LLMResponseError("bad json"), {"ok": True}])
+    result, sleeps = await call(provider)
+    assert result.content == {"ok": True}
+    assert provider.calls == 2
+    assert sleeps == [1.0]
+
+
+async def test_corrupted_json_not_retried_when_max_retries_zero() -> None:
     provider = ScriptedProvider([LLMResponseError("bad json"), {"never": 1}])
     with pytest.raises(LLMResponseError):
-        await call(provider)
+        await call(provider, max_retries=0)
     assert provider.calls == 1
 
 

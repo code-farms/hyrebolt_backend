@@ -3,7 +3,9 @@ from httpx import AsyncClient
 
 from app.api.deps import get_job_analysis_service, get_job_repository
 from app.main import app
-from tests.ai.fakes import FakeJob
+from app.schemas.analysis import JOB_ANALYSIS_PROMPT_VERSION
+from app.schemas.job import _current_analysis_out
+from tests.ai.fakes import FakeAnalysisRepository, FakeJob
 from tests.ai.test_analysis_service import FULL_ANALYSIS, ScriptedProvider, make_service
 from tests.fakes import FakeDB, FakeRedis
 
@@ -49,9 +51,7 @@ async def test_analyze_requires_auth(auth_client: AuthFixture, analysis_override
 async def test_analyze_unknown_job_404(auth_client: AuthFixture, analysis_overrides) -> None:
     client, _, _ = auth_client
     headers = await _login(client)
-    assert (
-        await client.post("/api/v1/jobs/missing/analyze", headers=headers)
-    ).status_code == 404
+    assert (await client.post("/api/v1/jobs/missing/analyze", headers=headers)).status_code == 404
 
 
 async def test_analyze_returns_result_and_caches(
@@ -75,3 +75,29 @@ async def test_analyze_returns_result_and_caches(
 
     assert provider.calls == 1  # second request served from the cache
     assert second.json()["processedAt"] == body["processedAt"]
+
+
+async def test_job_payload_hides_stale_analysis() -> None:
+    """A row from an older prompt version (or the mock provider before a real
+    key was configured) must not render as an empty analysis card: the client
+    sees null and requests a fresh analysis."""
+    from datetime import UTC, datetime
+
+    repo = FakeAnalysisRepository()
+    common = {
+        "analysis": FULL_ANALYSIS,
+        "confidence": 0.9,
+        "model": "scripted",
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "processed_at": datetime.now(UTC),
+    }
+    stale = await repo.upsert_for_job("stale", prompt_version="stale-mock", **common)
+    current = await repo.upsert_for_job(
+        "current", prompt_version=JOB_ANALYSIS_PROMPT_VERSION, **common
+    )
+
+    assert _current_analysis_out(None) is None
+    assert _current_analysis_out(stale) is None
+    out = _current_analysis_out(current)
+    assert out is not None and out.analysis.title == "Backend Engineer"

@@ -10,13 +10,13 @@ from app.core.config import Settings
 from app.core.logging import get_logger
 from app.db.generated.models import Job, JobAnalysis
 from app.repositories import JobAnalysisRepository, JobRepository
-from app.schemas.analysis import JobAnalysisResult
+from app.schemas.analysis import JOB_ANALYSIS_PROMPT_VERSION, JobAnalysisResult
 
 logger = get_logger(__name__)
 
-# Bump whenever SYSTEM_PROMPT or the prompt layout changes: stored analyses
-# from older versions are treated as stale and re-analyzed.
-PROMPT_VERSION = "v1"
+# Re-exported under the historical name; the value (and the bump rule) live in
+# app.schemas.analysis so serializers can hide stale rows.
+PROMPT_VERSION = JOB_ANALYSIS_PROMPT_VERSION
 
 SYSTEM_PROMPT = """You extract structured facts from job postings.
 Respond with a single JSON object with EXACTLY these keys:
