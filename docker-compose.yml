@@ -1,3 +1,9 @@
+# Compose project name: containers become hirebolt-<service>-1, the network
+# hirebolt_default and volumes hirebolt_<name>. Renamed from the folder-derived
+# "job_agent_backend" on 2026-08-30; data was copied from the old
+# job_agent_backend_postgres_data / _resume_data volumes (see README).
+name: hirebolt
+
 services:
   postgres:
     image: postgres:16-alpine

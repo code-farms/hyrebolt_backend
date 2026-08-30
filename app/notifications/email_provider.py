@@ -6,7 +6,7 @@ import smtplib
 from collections.abc import Callable
 from email.message import EmailMessage
 
-from app.core.config import Settings
+from app.core.config import APP_NAME, Settings
 from app.db.generated.models import Notification, User, UserProfile
 from app.models import NotificationChannel
 from app.notifications.base import NotificationProvider, NotificationSendError
@@ -33,7 +33,7 @@ class EmailProvider(NotificationProvider):
         message = EmailMessage()
         message["From"] = self._settings.smtp_from_address
         message["To"] = user.email
-        message["Subject"] = notification.subject or "Job Agent notification"
+        message["Subject"] = notification.subject or f"{APP_NAME} notification"
         message.set_content(notification.body or "")
         try:
             await asyncio.to_thread(self._transport, message)

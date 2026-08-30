@@ -20,7 +20,7 @@ from app.api.routers import (
     search,
     users,
 )
-from app.core.config import get_settings
+from app.core.config import APP_NAME, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.http import close_http_client
 from app.core.logging import configure_logging, get_logger
@@ -60,7 +60,7 @@ def create_app() -> FastAPI:
     # every route and schema, so none of it is served in production.
     docs_enabled = not settings.is_production
     app = FastAPI(
-        title="Job Agent API",
+        title=f"{APP_NAME} API",
         lifespan=lifespan,
         docs_url="/docs" if docs_enabled else None,
         redoc_url="/redoc" if docs_enabled else None,

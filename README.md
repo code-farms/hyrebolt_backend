@@ -1,9 +1,23 @@
-# Job Agent — Backend
+# Hirebolt — Backend
 
-FastAPI backend for the Job Agent: a personal, AI-assisted job search agent
+FastAPI backend for Hirebolt: a personal, AI-assisted job search agent
 that discovers jobs from multiple sources, normalizes and deduplicates them,
 matches them against your profile, ranks the results, and surfaces the best
 ones in a dashboard.
+
+> Renamed from "Job Agent" on 2026-08-30. Folder/package names keep the
+> original `job_agent` identifiers; the display name is `APP_NAME` in
+> `app/core/config.py`. The Docker Compose project is named `hirebolt`
+> (containers `hirebolt-api-1`, `hirebolt-postgres-1`, …; volumes
+> `hirebolt_*`). If you still have the old `job_agent_backend_*` volumes, copy
+> them once before `make up`:
+>
+> ```sh
+> for v in postgres_data resume_data; do
+>   docker volume create hirebolt_$v
+>   docker run --rm -v job_agent_backend_$v:/from:ro -v hirebolt_$v:/to alpine sh -c 'cp -a /from/. /to/'
+> done
+> ```
 
 The project is built phase by phase. **Phase 1 (Project Foundation) is what
 currently exists** — a running skeleton with the full toolchain wired end to
