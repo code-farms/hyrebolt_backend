@@ -97,10 +97,10 @@ services:
     stop_grace_period: 60s
 
   caddy:
-    # Frontend image: Vite build + Caddy (see ../job_agent_frontend/Dockerfile).
+    # Frontend image: Vite build + Caddy (see ../hyrebolt_frontend/Dockerfile).
     # The sibling checkout must exist next to this repo.
     build:
-      context: ../job_agent_frontend
+      context: ../hyrebolt_frontend
     ports:
       - "80:80"
       - "443:443"

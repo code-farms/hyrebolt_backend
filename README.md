@@ -9,13 +9,13 @@ ones in a dashboard.
 > original `job_agent` identifiers; the display name is `APP_NAME` in
 > `app/core/config.py`. The Docker Compose project is named `hyrebolt`
 > (containers `hyrebolt-api-1`, `hyrebolt-postgres-1`, …; volumes
-> `hyrebolt_*`). If you still have the old `job_agent_backend_*` volumes, copy
+> `hyrebolt_*`). If you still have the old `hyrebolt_backend_*` volumes, copy
 > them once before `make up`:
 >
 > ```sh
 > for v in postgres_data resume_data; do
 >   docker volume create hyrebolt_$v
->   docker run --rm -v job_agent_backend_$v:/from:ro -v hyrebolt_$v:/to alpine sh -c 'cp -a /from/. /to/'
+>   docker run --rm -v hyrebolt_backend_$v:/from:ro -v hyrebolt_$v:/to alpine sh -c 'cp -a /from/. /to/'
 > done
 > ```
 
@@ -25,14 +25,14 @@ deduplication, LLM-backed analysis and matching, ranking, resumes, application
 tracking, notifications (in-app / email / Telegram), analytics and hardening.
 See "Production deployment" below for running it behind Caddy.
 
-The React frontend lives in its own repository: `job_agent_frontend` (a
+The React frontend lives in its own repository: `hyrebolt_frontend` (a
 sibling of this repo). This repo owns all infrastructure — Postgres, Redis,
 and the API all run from the Docker Compose file here.
 
 ## Architecture
 
 ```
-React (job_agent_frontend) ──HTTP──> FastAPI ──> Services ──> Repositories ──> PostgreSQL
+React (hyrebolt_frontend) ──HTTP──> FastAPI ──> Services ──> Repositories ──> PostgreSQL
                                         │
                                         └──> Redis  (broker for the background workers added in Phase 9)
 ```
@@ -42,7 +42,7 @@ business logic lives in `services/`, and database access is confined to
 repositories.
 
 ```
-job_agent_backend/
+hyrebolt_backend/
 ├── app/
 │   ├── main.py           App factory + lifespan (DB/Redis connect/disconnect)
 │   ├── api/              Routers + dependency injection
@@ -115,7 +115,7 @@ make down-v      # stop and drop the Postgres volume
 make logs        # follow api logs
 ```
 
-The frontend is started separately from the `job_agent_frontend` repo with
+The frontend is started separately from the `hyrebolt_frontend` repo with
 `pnpm dev` (see its README).
 
 ## Database setup
@@ -169,7 +169,7 @@ terminates TLS (Let's Encrypt, automatic) and serves the frontend and the API
 from a single origin:
 
 ```
-https://DOMAIN/            → Caddy → SPA bundle (built from ../job_agent_frontend)
+https://DOMAIN/            → Caddy → SPA bundle (built from ../hyrebolt_frontend)
 https://DOMAIN/api/*       → Caddy → api:8000 (uvicorn --proxy-headers, non-root)
 https://DOMAIN/health*     → Caddy → api:8000
                              worker (arq cron, 08:00 in TIMEZONE) · postgres · redis (appendonly)
@@ -184,9 +184,9 @@ share a host with the dev stack.
 - Docker Engine + Compose v2 on the server; ports 80 and 443 open.
 - A DNS A/AAAA record for `DOMAIN` pointing at the server (needed for the
   certificate).
-- Both repos checked out side by side: `job_agent_backend/` and
-  `job_agent_frontend/` (the compose file builds the frontend image from
-  `../job_agent_frontend`).
+- Both repos checked out side by side: `hyrebolt_backend/` and
+  `hyrebolt_frontend/` (the compose file builds the frontend image from
+  `../hyrebolt_frontend`).
 
 ### First deploy
 
@@ -207,7 +207,7 @@ daily digest.
 ### Updating
 
 ```bash
-git -C ../job_agent_frontend pull && git pull
+git -C ../hyrebolt_frontend pull && git pull
 make prod-up        # rebuilds changed images, recreates only what changed
 make prod-migrate   # no-op when the schema is unchanged
 ```

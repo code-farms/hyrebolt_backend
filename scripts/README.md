@@ -1,6 +1,6 @@
 # Scripts
 
-Ops helpers, run from `job_agent_backend/` against the compose stack.
+Ops helpers, run from `hyrebolt_backend/` against the compose stack.
 
 | Script | Make target | What it does |
 |---|---|---|

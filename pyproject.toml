@@ -1,5 +1,5 @@
 [project]
-name = "job-agent-api"
+name = "hyrebolt-api"
 version = "0.1.0"
 description = "Job Search Agent API"
 requires-python = ">=3.12"
