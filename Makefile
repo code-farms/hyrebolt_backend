@@ -7,7 +7,7 @@
 # The env file is passed explicitly so ${DOMAIN} & co. interpolate in the
 # compose file and the containers read the same values.
 PROD := docker compose --env-file .env.production -f compose.prod.yml
-PROD_SCRIPT_ENV := ENV_FILE=.env.production COMPOSE_FILE=compose.prod.yml COMPOSE_PROJECT_NAME=hirebolt-prod
+PROD_SCRIPT_ENV := ENV_FILE=.env.production COMPOSE_FILE=compose.prod.yml COMPOSE_PROJECT_NAME=hyrebolt-prod
 
 prod-up:
 	$(PROD) up --build -d

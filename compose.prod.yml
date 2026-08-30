@@ -12,7 +12,7 @@
 #     reachable on the compose network; Caddy terminates TLS and proxies /api.
 #   - Redis persists (appendonly) so queued agent jobs survive a restart.
 #   - Separate project name so it can coexist with the dev stack on one host.
-name: hirebolt-prod
+name: hyrebolt-prod
 
 services:
   postgres:

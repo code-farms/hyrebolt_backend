@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Product name as shown to users (API docs title, notification subjects). A
 # constant rather than a setting: the brand does not vary per environment.
-APP_NAME = "Hirebolt"
+APP_NAME = "Hyrebolt"
 
 # Values that only ever appear in examples/templates; refused in production.
 _PLACEHOLDER_SECRET_MARKERS = ("change-me", "changeme", "example", "placeholder", "replace")

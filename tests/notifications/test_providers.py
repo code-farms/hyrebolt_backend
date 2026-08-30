@@ -17,6 +17,17 @@ USER = SimpleNamespace(id="u1", email="dev@example.com")
 NOTIFICATION = SimpleNamespace(subject="Digest", body="Hello!")
 
 
+def all_channels_off():
+    """Baseline independent of the developer's .env (which may enable Telegram)."""
+    return get_settings().model_copy(
+        update={
+            "email_notifications_enabled": False,
+            "telegram_notifications_enabled": False,
+            "telegram_bot_token": None,
+        }
+    )
+
+
 def email_settings(**overrides):
     base = {
         "email_notifications_enabled": True,
@@ -26,7 +37,7 @@ def email_settings(**overrides):
         "smtp_password": "p",
     }
     base.update(overrides)
-    return get_settings().model_copy(update=base)
+    return all_channels_off().model_copy(update=base)
 
 
 def test_provider_env_gating() -> None:
@@ -49,7 +60,7 @@ def test_provider_env_gating() -> None:
 
 def test_build_providers_only_includes_configured() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
-    none = build_providers(get_settings(), client)  # all env-off by default
+    none = build_providers(all_channels_off(), client)
     assert none == {}
 
     email_only = build_providers(email_settings(), client)

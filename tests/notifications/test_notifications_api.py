@@ -100,8 +100,12 @@ async def _login(client: AsyncClient) -> tuple[dict[str, str], str]:
 
 async def test_endpoints_require_auth(auth_client: AuthFixture, notif_overrides) -> None:
     client, _, _ = auth_client
-    for path in ("/api/v1/notifications", "/api/v1/notifications/unread-count",
-                 "/api/v1/notifications/channels", "/api/v1/notifications/digest/preview"):
+    for path in (
+        "/api/v1/notifications",
+        "/api/v1/notifications/unread-count",
+        "/api/v1/notifications/channels",
+        "/api/v1/notifications/digest/preview",
+    ):
         assert (await client.get(path)).status_code == 401
 
 
@@ -119,9 +123,7 @@ async def test_list_unread_and_mark_read_flow(auth_client: AuthFixture, notif_ov
     unread = await client.get("/api/v1/notifications/unread-count", headers=headers)
     assert unread.json() == {"unread": 2}
 
-    unread_only = await client.get(
-        "/api/v1/notifications?unreadOnly=true", headers=headers
-    )
+    unread_only = await client.get("/api/v1/notifications?unreadOnly=true", headers=headers)
     assert unread_only.json()["total"] == 2
 
     target = next(r for r in rows if r.readAt is None)
@@ -166,22 +168,31 @@ async def test_channels_reflect_env_flags(auth_client: AuthFixture, notif_overri
     client, _, _ = auth_client
     headers, _ = await _login(client)
 
-    default = await client.get("/api/v1/notifications/channels", headers=headers)
-    body = default.json()
-    assert body["inApp"] == {"available": True, "enabled": True}
-    assert body["email"]["available"] is False  # env off by default
-    assert body["telegram"]["available"] is False
-
-    original = get_settings
-    tweaked = original().model_copy(
+    # Pin every channel flag so the test does not depend on the developer's
+    # .env (which may have Telegram enabled with a real bot token).
+    all_off = get_settings().model_copy(
+        update={
+            "email_notifications_enabled": False,
+            "telegram_notifications_enabled": False,
+            "telegram_bot_token": None,
+        }
+    )
+    email_on = all_off.model_copy(
         update={
             "email_notifications_enabled": True,
             "smtp_host": "smtp.test",
             "smtp_from_address": "agent@test",
         }
     )
-    app.dependency_overrides[get_settings] = lambda: tweaked
     try:
+        app.dependency_overrides[get_settings] = lambda: all_off
+        default = await client.get("/api/v1/notifications/channels", headers=headers)
+        body = default.json()
+        assert body["inApp"] == {"available": True, "enabled": True}
+        assert body["email"]["available"] is False
+        assert body["telegram"]["available"] is False
+
+        app.dependency_overrides[get_settings] = lambda: email_on
         enabled = await client.get("/api/v1/notifications/channels", headers=headers)
         assert enabled.json()["email"]["available"] is True
         assert enabled.json()["telegram"]["available"] is False

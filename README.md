@@ -1,21 +1,21 @@
-# Hirebolt — Backend
+# Hyrebolt — Backend
 
-FastAPI backend for Hirebolt: a personal, AI-assisted job search agent
+FastAPI backend for Hyrebolt: a personal, AI-assisted job search agent
 that discovers jobs from multiple sources, normalizes and deduplicates them,
 matches them against your profile, ranks the results, and surfaces the best
 ones in a dashboard.
 
 > Renamed from "Job Agent" on 2026-08-30. Folder/package names keep the
 > original `job_agent` identifiers; the display name is `APP_NAME` in
-> `app/core/config.py`. The Docker Compose project is named `hirebolt`
-> (containers `hirebolt-api-1`, `hirebolt-postgres-1`, …; volumes
-> `hirebolt_*`). If you still have the old `job_agent_backend_*` volumes, copy
+> `app/core/config.py`. The Docker Compose project is named `hyrebolt`
+> (containers `hyrebolt-api-1`, `hyrebolt-postgres-1`, …; volumes
+> `hyrebolt_*`). If you still have the old `job_agent_backend_*` volumes, copy
 > them once before `make up`:
 >
 > ```sh
 > for v in postgres_data resume_data; do
->   docker volume create hirebolt_$v
->   docker run --rm -v job_agent_backend_$v:/from:ro -v hirebolt_$v:/to alpine sh -c 'cp -a /from/. /to/'
+>   docker volume create hyrebolt_$v
+>   docker run --rm -v job_agent_backend_$v:/from:ro -v hyrebolt_$v:/to alpine sh -c 'cp -a /from/. /to/'
 > done
 > ```
 
@@ -176,7 +176,7 @@ https://DOMAIN/health*     → Caddy → api:8000
 ```
 
 Only Caddy publishes ports (80/443). Postgres, Redis and the API are reachable
-solely on the compose network. The project is named `hirebolt-prod`, so it can
+solely on the compose network. The project is named `hyrebolt-prod`, so it can
 share a host with the dev stack.
 
 ### Prerequisites
@@ -220,8 +220,8 @@ make prod-restore FROM=backups/<ts>    # destructive, asks for confirmation
 ```
 
 Schedule `make prod-backup` from cron (e.g. daily at 03:00) and copy
-`backups/` off the host. Compose volumes: `hirebolt-prod_postgres_data`,
-`hirebolt-prod_resume_data`, `hirebolt-prod_redis_data`, `hirebolt-prod_caddy_data`.
+`backups/` off the host. Compose volumes: `hyrebolt-prod_postgres_data`,
+`hyrebolt-prod_resume_data`, `hyrebolt-prod_redis_data`, `hyrebolt-prod_caddy_data`.
 
 ### Operational notes
 
