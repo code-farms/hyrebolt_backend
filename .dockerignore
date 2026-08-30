@@ -6,5 +6,7 @@ app/db/generated
 data
 .git
 .env
+.env.*
+backups
 *.log
 .DS_Store

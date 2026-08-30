@@ -1,0 +1,125 @@
+# Production stack. Run via the Makefile so the env file and compose file are
+# always paired:
+#
+#   make prod-up        # build + start (reads .env.production)
+#   make prod-migrate   # prisma migrate deploy
+#   make prod-logs
+#
+# Differences from docker-compose.yml (development):
+#   - api/worker run the image's own CMD/USER: no --reload, non-root `app`
+#     user, no source bind mounts, Prisma client baked into the image.
+#   - Nothing but Caddy publishes a port. Postgres, Redis and the API are only
+#     reachable on the compose network; Caddy terminates TLS and proxies /api.
+#   - Redis persists (appendonly) so queued agent jobs survive a restart.
+#   - Separate project name so it can coexist with the dev stack on one host.
+name: hirebolt-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    # Image CMD: uvicorn --proxy-headers; FORWARDED_ALLOW_IPS from the env file
+    # tells it which upstream (Caddy) to trust for the client address.
+    env_file: .env.production
+    volumes:
+      # Uploaded resume originals; extracted text lives in Postgres.
+      - resume_data:/backend/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    mem_limit: 1g
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["uv", "run", "arq", "app.worker.settings.WorkerSettings"]
+    env_file: .env.production
+    volumes:
+      - resume_data:/backend/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "uv"
+        - "run"
+        - "python"
+        - "-c"
+        - "import os,sys,redis; sys.exit(0 if redis.from_url(os.environ['REDIS_URL']).exists('arq:queue:health-check') else 1)"
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+    mem_limit: 1g
+    # Let an in-flight discovery run finish before SIGKILL on `compose down`.
+    stop_grace_period: 60s
+
+  caddy:
+    # Frontend image: Vite build + Caddy (see ../job_agent_frontend/Dockerfile).
+    # The sibling checkout must exist next to this repo.
+    build:
+      context: ../job_agent_frontend
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  resume_data:
+  caddy_data:
+  caddy_config:

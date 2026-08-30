@@ -19,9 +19,11 @@ ones in a dashboard.
 > done
 > ```
 
-The project is built phase by phase. **Phase 1 (Project Foundation) is what
-currently exists** — a running skeleton with the full toolchain wired end to
-end. There is no authentication, job scraping, AI, or application tracking yet.
+The project was built phase by phase (see `../phase-wise-plan.txt`); all 18
+phases are implemented — auth, multi-source discovery, normalization and
+deduplication, LLM-backed analysis and matching, ranking, resumes, application
+tracking, notifications (in-app / email / Telegram), analytics and hardening.
+See "Production deployment" below for running it behind Caddy.
 
 The React frontend lives in its own repository: `job_agent_frontend` (a
 sibling of this repo). This repo owns all infrastructure — Postgres, Redis,
@@ -159,3 +161,75 @@ curl http://localhost:8000/health          # postgres + redis both "ok"
 `/health/live` is a dependency-free liveness probe (used by the container
 healthcheck). `/health` is a readiness probe that checks Postgres and Redis and
 returns 503 with a per-component breakdown when either is down.
+
+## Production deployment (Caddy)
+
+`compose.prod.yml` runs the whole product on one host behind Caddy, which
+terminates TLS (Let's Encrypt, automatic) and serves the frontend and the API
+from a single origin:
+
+```
+https://DOMAIN/            → Caddy → SPA bundle (built from ../job_agent_frontend)
+https://DOMAIN/api/*       → Caddy → api:8000 (uvicorn --proxy-headers, non-root)
+https://DOMAIN/health*     → Caddy → api:8000
+                             worker (arq cron, 08:00 in TIMEZONE) · postgres · redis (appendonly)
+```
+
+Only Caddy publishes ports (80/443). Postgres, Redis and the API are reachable
+solely on the compose network. The project is named `hirebolt-prod`, so it can
+share a host with the dev stack.
+
+### Prerequisites
+
+- Docker Engine + Compose v2 on the server; ports 80 and 443 open.
+- A DNS A/AAAA record for `DOMAIN` pointing at the server (needed for the
+  certificate).
+- Both repos checked out side by side: `job_agent_backend/` and
+  `job_agent_frontend/` (the compose file builds the frontend image from
+  `../job_agent_frontend`).
+
+### First deploy
+
+```bash
+cp .env.production.example .env.production
+# Fill in DOMAIN, ACME_EMAIL, POSTGRES_PASSWORD (+ DATABASE_URL), JWT_SECRET
+# (`openssl rand -hex 32`), CORS_ORIGINS=https://DOMAIN, LLM_API_KEY,
+# TELEGRAM_BOT_TOKEN. Placeholder secrets and non-https origins are refused.
+make prod-up        # builds api/worker + frontend images, starts everything
+make prod-migrate   # prisma migrate deploy (committed migrations only)
+make prod-ps        # all five services healthy
+```
+
+Open `https://DOMAIN` — the landing page, then register the first account.
+Save the Telegram chat ID under Settings › Notifications to receive the
+daily digest.
+
+### Updating
+
+```bash
+git -C ../job_agent_frontend pull && git pull
+make prod-up        # rebuilds changed images, recreates only what changed
+make prod-migrate   # no-op when the schema is unchanged
+```
+
+### Backups
+
+```bash
+make prod-backup                       # backups/<timestamp>/{db.dump,resume_data.tar.gz}
+make prod-restore FROM=backups/<ts>    # destructive, asks for confirmation
+```
+
+Schedule `make prod-backup` from cron (e.g. daily at 03:00) and copy
+`backups/` off the host. Compose volumes: `hirebolt-prod_postgres_data`,
+`hirebolt-prod_resume_data`, `hirebolt-prod_redis_data`, `hirebolt-prod_caddy_data`.
+
+### Operational notes
+
+- Logs: `make prod-logs` (`LOG_FORMAT=json` for the API/worker).
+- The daily agent runs at `DAILY_SEARCH_TIME` in `TIMEZONE` (`08:00
+  Asia/Kolkata` = 02:30 UTC); the digest is sent right after. A change to
+  either value needs a worker restart (`make prod-up`).
+- An empty `LLM_API_KEY` silently selects the mock provider — check the
+  `job_analyzed … model=` log line after the first run.
+- Local smoke test: set `DOMAIN=localhost` (Caddy issues a self-signed
+  certificate; use `curl -k`).

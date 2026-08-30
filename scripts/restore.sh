@@ -8,8 +8,9 @@ set -eu
 SRC="${1:?usage: scripts/restore.sh <backup-dir>}"
 [ -f "$SRC/db.dump" ] || { echo "no db.dump in $SRC" >&2; exit 1; }
 
-POSTGRES_USER="$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2-)"
-POSTGRES_DB="$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2-)"
+ENV_FILE="${ENV_FILE:-.env}" # .env.production via `make prod-restore`
+POSTGRES_USER="$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2-)"
+POSTGRES_DB="$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2-)"
 
 echo "This will REPLACE database '$POSTGRES_DB' and all resume files with $SRC."
 printf 'Type the database name to continue: '

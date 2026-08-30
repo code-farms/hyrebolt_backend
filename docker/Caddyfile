@@ -1,0 +1,39 @@
+# Single-origin production front door. Caddy serves the SPA build baked into
+# the frontend image (/srv) and proxies the API on the same host, so cookies
+# and CORS need no cross-origin setup. TLS is automatic: a real DOMAIN gets a
+# Let's Encrypt certificate, DOMAIN=localhost gets Caddy's internal CA.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# API + health probes. Caddy adds X-Forwarded-For / X-Forwarded-Proto;
+	# uvicorn trusts them via FORWARDED_ALLOW_IPS so rate limits see the client.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /health* {
+		reverse_proxy api:8000
+	}
+
+	# Hashed Vite assets are immutable; index.html is not cached so deploys
+	# roll out immediately.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

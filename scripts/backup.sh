@@ -12,9 +12,12 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DEST="$ROOT/$STAMP"
 mkdir -p "$DEST"
 
-# Load POSTGRES_* from .env without exporting anything else.
-POSTGRES_USER="$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2-)"
-POSTGRES_DB="$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2-)"
+# Load POSTGRES_* from the env file without exporting anything else.
+# ENV_FILE=.env.production (with COMPOSE_FILE/COMPOSE_PROJECT_NAME) targets the
+# production stack — see `make prod-backup`.
+ENV_FILE="${ENV_FILE:-.env}"
+POSTGRES_USER="$(grep -E '^POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2-)"
+POSTGRES_DB="$(grep -E '^POSTGRES_DB=' "$ENV_FILE" | cut -d= -f2-)"
 
 echo "→ pg_dump $POSTGRES_DB → $DEST/db.dump"
 docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$DEST/db.dump"
